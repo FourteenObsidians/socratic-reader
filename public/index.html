@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+/* 主题在 CSS 加载前应用，避免闪屏；默认亮色（纸张阅读更自然） */
+document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'light';
+</script>
+<title>苏格拉底阅读器</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="mode-library">
+
+<header id="topbar">
+  <div class="brand">🏛 苏格拉底阅读器</div>
+  <nav id="modes">
+    <button class="mode-btn" data-mode="library">📚 书库</button>
+    <span class="mode-sep" title="学习：建立理解"></span>
+    <button class="mode-btn" data-mode="reader">📖 带你看书</button>
+    <button class="mode-btn" data-mode="explore">🔭 自由探索</button>
+    <span class="mode-sep" title="巩固：对抗遗忘"></span>
+    <button class="mode-btn" data-mode="review">🧠 巩固</button>
+  </nav>
+  <div id="docTitle" class="doc-title" title=""></div>
+  <div class="top-actions">
+    <button id="btnCards" class="ghost hidden" title="卡片库" style="display:none">🗂 卡片</button>
+    <button id="btnAiToggle" class="ghost" title="显示/隐藏 AI 面板">🤖</button>
+    <button id="btnTheme" class="ghost" title="切换亮/暗模式">🌙</button>
+    <button id="btnSettings" class="ghost" title="设置">⚙</button>
+  </div>
+</header>
+
+<div id="main">
+  <aside id="sidebar">
+    <div class="side-tabs">
+      <button class="side-tab active" data-tab="files">文件</button>
+      <button class="side-tab" data-tab="zotero">Zotero</button>
+      <button class="side-tab" data-tab="toc">目录</button>
+      <button class="side-tab" data-tab="map">地图</button>
+      <button class="side-tab" data-tab="annots">批注</button>
+    </div>
+    <div class="side-panel" id="panelFiles"></div>
+    <div class="side-panel hidden" id="panelZotero"><div class="hint pad">正在检测 Zotero…</div></div>
+    <div class="side-panel hidden" id="panelToc"><div class="hint pad">打开 PDF 后显示目录</div></div>
+    <div class="side-panel hidden" id="panelMap"><div class="hint pad">打开 PDF 后点「🗺 拆书」生成知识地图</div></div>
+    <div class="side-panel hidden" id="panelAnnots"><div class="hint pad">高亮与笔记会显示在这里</div></div>
+  </aside>
+
+  <section id="center">
+    <div id="viewLibrary"></div>
+
+    <div id="viewReader" class="hidden">
+      <div id="reviewBanner" class="hidden">
+        <span id="bannerText"></span>
+        <span class="banner-ops">
+          <button id="bannerReview" class="primary small">🏛 现在复盘</button>
+          <button id="bannerLater" class="ghost small">继续读</button>
+          <button id="bannerNext" class="ghost small">跳过 → 下一部分</button>
+        </span>
+      </div>
+      <div id="readerToolbar">
+        <select id="partSelect" title="阅读部分（来自 PDF 大纲，可自定义页码段）"></select>
+        <span id="customRange" class="hidden">
+          <input id="partFrom" type="number" min="1" style="width:56px"> –
+          <input id="partTo" type="number" min="1" style="width:56px"> 页
+        </span>
+        <button id="btnPartReview" class="primary small" title="框选一个部分（上方下拉或自定义页码段），AI 切块介绍并逐块提问，边读边引导">🎧 苏格拉底带读 · 本部分</button>
+        <button id="btnReadalong" class="ghost small" title="陪读：设定本部分为目标，读到末页自动邀请复盘">🚶 陪读:关</button>
+        <button id="btnBookmap" class="ghost small" title="让 AI 把这本书拆成带依赖关系的知识节点">🗺 拆书</button>
+        <span class="sep"></span>
+        <button id="btnBoxAsk" class="ghost small" title="圈住一块图/公式/表格，向 AI 提问">🔲 圈图</button>
+        <button id="btnPrev" class="ghost small" title="上一页（←）">‹</button>
+        <span class="page-ind">
+          <input id="pageJump" type="number" min="1" step="1" title="输入页码，回车跳转">
+          <span class="muted">/</span> <span id="pageTotal">0</span>
+        </span>
+        <button id="btnNext" class="ghost small" title="下一页（→）">›</button>
+        <span class="sep"></span>
+        <button id="btnZoomOut" class="ghost small" title="缩小">−</button>
+        <button id="btnZoomFit" class="ghost small" title="适应宽度">适应宽度</button>
+        <button id="btnZoomIn" class="ghost small" title="放大">＋</button>
+        <span class="sep"></span>
+        <span id="raProgressWrap" class="hidden"><span id="raProgressText"></span><span class="ra-bar"><span id="raProgress"></span></span><span id="raGoal" class="muted"></span></span>
+      </div>
+      <div id="pdfScroll"></div>
+    </div>
+
+    <div id="viewMd" class="hidden">
+      <div class="md-bar">
+        <button id="mdBack" class="ghost small">‹ 返回书库</button>
+        <span id="mdTitle" class="muted"></span>
+      </div>
+      <div id="mdContent" class="md-view"></div>
+    </div>
+
+    <div id="viewExplore" class="hidden">
+      <div class="explore-wrap">
+        <div class="explore-card">
+          <h2>🔭 自由探索</h2>
+          <p class="muted">不导入 PDF。选一个主题，苏格拉底式引导者通过连续提问带你主动构建理解；卡住了它会给你最小必要的背景，然后继续问。</p>
+          <input id="exploreTopic" placeholder="想学什么？如：知识蒸馏、贝叶斯推断、康德认识论…">
+          <div class="row">
+            <label>我的水平
+              <select id="exploreLevel">
+                <option value="完全新手">完全新手</option>
+                <option value="本科生" selected>本科生</option>
+                <option value="研究生">研究生</option>
+                <option value="研究者">研究者</option>
+              </select>
+            </label>
+            <label class="check"><input type="checkbox" id="exploreNotes" checked> 检索我的 Obsidian 笔记作背景</label>
+          </div>
+          <button id="btnExploreStart" class="primary">开始探索</button>
+          <div id="exploreHits" class="hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="viewReview" class="hidden">
+      <div class="review-wrap">
+        <div class="review-head">
+          <h2>🧠 巩固</h2>
+          <p class="muted">对抗遗忘的复习室。📌 待巩固点来自你学习时暴露的薄弱处；每个已拆书的部分都可<b>复盘检验</b>——先凭记忆作答，再由引导者追问校验，未复盘的先检验，已掌握的随时再巩固。</p>
+        </div>
+        <div id="reviewPool"></div>
+      </div>
+    </div>
+  </section>
+
+  <aside id="aiPanel">
+    <div id="chatHeader">
+      <div id="chatTitle">🤖 苏格拉底引导者</div>
+      <button id="btnPeek" class="ghost small hidden" title="暂时掀开 PDF 核对（复盘应先凭记忆作答）">👁 偷看原文</button>
+      <button id="btnChatClear" class="ghost small" title="清空当前对话">🧹</button>
+    </div>
+    <div id="chatContext" class="hidden"></div>
+    <div id="chatChips" class="hidden"></div>
+    <div id="chatMsgs">
+      <div class="chat-empty">
+        <div class="big">🏛</div>
+        <p>我是您的苏格拉底式引导者。<br>我将仅通过提问来协助您思考——不提供答案，但会认真对待每一个想法。</p>
+        <p class="muted">阅读 PDF 时选中一段文字点 💬，或读完一个部分后点「✅ 完成此部分」；<br>也可以切到 🔭 自由探索，从零开始学一个主题。</p>
+      </div>
+    </div>
+    <div id="chatInputBar">
+      <textarea id="chatInput" rows="2" placeholder="回答引导者的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+      <div class="input-actions">
+        <button id="btnStop" class="ghost small hidden">⏹ 停止</button>
+        <button id="btnSend" class="primary small">发送</button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- 选区浮动工具条 + 换色板 -->
+<div id="selToolbar" class="hidden">
+  <button data-act="hl"   title="高亮（用当前颜色）">🖍</button>
+  <button data-act="color" title="换色高亮…">🎨</button>
+  <button data-act="copy" title="复制文本">📋</button>
+  <button data-act="ask"  title="就这段向我提问">💬</button>
+  <button data-act="note" title="高亮 + 笔记">📝</button>
+</div>
+<div id="colorPalette" class="hidden"></div>
+<!-- 批注管理浮条（点击高亮块弹出） -->
+<div id="annToolbar" class="hidden"></div>
+
+<!-- 制卡对话框 -->
+<dialog id="dlgCard">
+  <div class="dlg-head"><span id="cardDlgTitle">🗂 制卡</span><button class="ghost small" id="btnCardClose">✕</button></div>
+  <div class="dlg-body">
+    <div class="row">
+      <label>类型
+        <select id="cardType">
+          <option value="extract">📖 摘录卡（阅读卡片）</option>
+          <option value="cloze">🕳 挖空卡（cloze）</option>
+          <option value="qa">❓ 问答卡</option>
+        </select>
+      </label>
+      <label>标签 <input id="cardTags" placeholder="逗号分隔，可留空"></label>
+    </div>
+    <label id="cardFrontLabel">正面 / 摘录内容</label>
+    <textarea id="cardFront" rows="6" placeholder="摘录或问题正文…（挖空卡：选中文字后点下方按钮）"></textarea>
+    <div class="row" id="clozeBar">
+      <span class="muted">挖空卡：在上方选中文字 →</span>
+      <button id="btnCloze" class="ghost small" type="button">🕳 挖空成 [[...]]</button>
+    </div>
+    <label id="cardBackLabel">背面 / 备注（可选）</label>
+    <textarea id="cardBack" rows="3" placeholder="挖空卡可留空；问答卡填答案；摘录卡可写你的想法"></textarea>
+    <div class="hint" id="cardSource"></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="ghost" id="btnCardCancel">取消</button>
+    <button class="ghost" id="btnCardSaveCopy">保存并复制</button>
+    <button class="primary" id="btnCardSave">保存卡片</button>
+  </div>
+</dialog>
+
+<!-- 设置对话框 -->
+<dialog id="dlgSettings">
+  <div class="dlg-head"><span>⚙ 设置</span><button class="ghost small" id="btnSetClose">✕</button></div>
+  <div class="dlg-body">
+    <h3>LLM 接口（OpenAI 兼容）</h3>
+    <label>预设
+      <select id="setPreset"></select>
+    </label>
+    <label>Base URL <input id="setBaseUrl" placeholder="https://api.deepseek.com/v1"></label>
+    <label>API Key
+      <span class="row">
+        <input id="setApiKey" type="password" placeholder="sk-…（Ollama 可留空）">
+        <button id="btnTest" class="ghost small" type="button">测试</button>
+      </span>
+      <span id="testResult" class="hint"></span>
+    </label>
+    <label>模型
+      <span class="row">
+        <input id="setModel" list="modelList" placeholder="deepseek-chat">
+        <button id="btnModels" class="ghost small" type="button">拉取模型列表</button>
+      </span>
+      <datalist id="modelList"></datalist>
+    </label>
+    <label>视觉模型（可选，处理带图消息）
+      <input id="setVisionModel" list="modelList" placeholder="留空=不支持图表；如 glm-4v-flash">
+    </label>
+    <div class="row">
+      <label>温度 <input id="setTemp" type="number" step="0.1" min="0" max="2" style="width:90px"></label>
+      <label>最大 tokens（0=不限制；推理模型思考也计入，太小正文会被挤空） <input id="setMaxTokens" type="number" step="256" style="width:110px"></label>
+    </div>
+    <h3>本地文件联动</h3>
+    <label>Obsidian vault 路径
+      <input id="setVault" placeholder="../专业学习">
+      <span id="vaultState" class="hint"></span>
+    </label>
+    <div class="row">
+      <label>卡片子目录 <input id="setCardsDir" placeholder="Cards"></label>
+      <label>总结子目录 <input id="setSumDir" placeholder="阅读总结"></label>
+    </div>
+    <label>文件库根目录（每行一个，支持 C:\ 风格路径）
+      <textarea id="setRoots" rows="3"></textarea>
+    </label>
+    <label>苏格拉底人设文件（实时读取，改了立即生效）
+      <input id="setPersona" placeholder="../.claude/agents/socratic-guide.md">
+    </label>
+    <label>陪读伙伴人格（角色只是外衣，追问严格度不变；对应"专家反转效应"，随时可换）
+      <select id="setPersonaStyle">
+        <option value="classic">🏛 经典苏格拉底（人设原文）</option>
+        <option value="genki">🎮 活泼伙伴（话多、偶尔吐槽）</option>
+        <option value="scholar">🎓 严谨学者（精确、沉稳、引页码）</option>
+        <option value="challenger">😤 善意杠精（先开杠再引导）</option>
+      </select>
+    </label>
+    <label>带读聚焦（AI 讲到某块时 PDF 的反馈方式）
+      <select id="setFocusMode">
+        <option value="flash">✨ 高亮片刻后淡出（默认）</option>
+        <option value="keep">📌 高亮常亮（直到下一块）</option>
+        <option value="off">🚫 不高亮（仅自动滚动）</option>
+      </select>
+    </label>
+    <h3>Zotero 联动</h3>
+    <label>Zotero 数据目录（留空 = 自动探测；含 storage/ 与 zotero.sqlite 的那个文件夹）
+      <input id="setZoteroDir" placeholder="自动探测，如 /mnt/c/Users/你/Zotero 或 C:\Users\你\Zotero">
+      <span id="zoteroState" class="hint"></span>
+    </label>
+  </div>
+  <div class="dlg-foot">
+    <button class="ghost" id="btnSetCancel">关闭</button>
+    <button class="primary" id="btnSetSave">保存</button>
+  </div>
+</dialog>
+
+<!-- 总结预览对话框 -->
+<dialog id="dlgSummary">
+  <div class="dlg-head"><span id="sumTitle">📝 重点总结</span><button class="ghost small" id="sumClose">✕</button></div>
+  <div class="dlg-body">
+    <textarea id="sumContent" rows="16" placeholder="生成中…（可自由编辑后保存）"></textarea>
+    <div class="hint" id="sumTarget"></div>
+    <a id="sumOpen" class="hidden" href="#">在 Obsidian 中打开 →</a>
+  </div>
+  <div class="dlg-foot">
+    <button class="ghost" id="sumRegen">重新生成</button>
+    <button class="primary" id="sumSave">保存到 vault</button>
+  </div>
+</dialog>
+
+<!-- 确认对话框（第一遍自己读原则） -->
+<dialog id="dlgConfirm">
+  <div class="dlg-head"><span>🧭 开始复盘之前</span><button class="ghost small" id="confirmCancel">✕</button></div>
+  <div class="dlg-body">
+    <p id="confirmText"></p>
+    <label class="check"><input type="checkbox" id="confirmCheck"> 我已经自己读过这一部分（第一遍自己读原则）</label>
+  </div>
+  <div class="dlg-foot">
+    <button class="ghost" id="confirmCancel2">取消</button>
+    <button class="primary" id="confirmOk">开始苏格拉底复盘</button>
+  </div>
+</dialog>
+
+<div id="toasts"></div>
+
+<script src="js/jsonfix.js"></script>
+<script src="js/util.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/cards.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/reader.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

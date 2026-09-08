@@ -1,0 +1,14 @@
+# 隐私：绝不入库（API Key / 学习数据）
+config.json
+data/
+*.zip
+
+# 个人本地工具（朋友的仓库里没意义）
+tools/get-vendor.js
+tools/make-shortcut.ps1
+
+# 通用
+node_modules/
+.DS_Store
+*.log
+public/vendor/

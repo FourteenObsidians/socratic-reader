@@ -1,0 +1,7 @@
+# Windows 朋友克隆时保持 LF（server.js / sh 脚本换行符不被 CRLF 改坏）
+*.sh text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.bat text eol=crlf
