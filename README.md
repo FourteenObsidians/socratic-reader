@@ -57,3 +57,7 @@ node server.js        # 需要 Node ≥ 18（用到内置 fetch）
 2. **分享给别人**：用 `./make-share.sh` 打包——它会**排除 `config.json`（你的 Key）和 `data/`（你的学习数据）**。对方拿到后自己填 Key
 3. 首次加载 pdf.js 从 jsdelivr/unpkg CDN 拉取（中文 PDF 的 cMap 也在 CDN）；完全离线用 `./make-share.sh --offline` 把它们 vendor 进包里
 4. Zotero 集成只读本机 Zotero 数据目录，没装就显示「未检测到」，无副作用
+
+## 致谢
+
+- **[Socratopia](https://www.socratopia.app/)** —— 本项目的教学形态参考对象。其课堂对话呈现出的「困境先行 → 当场演算 → 缺陷现形 → 学生自己点破」的带读节奏，直接塑造了本项目带读引擎的设计（问题驱动叙事、实例演算、先问后讲、反馈锚定原话等规则皆源于对此风格的拆解与模仿）。
