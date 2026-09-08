@@ -5,7 +5,7 @@ PDF 阅读 + 苏格拉底式 AI 带读的个人学习工具。纯本地运行：
 ## 获取
 
 ```bash
-git clone <仓库地址>
+git clone https://github.com/FourteenObsidians/socratic-reader
 cd socratic-reader
 node server.js        # Node ≥ 18
 ```
