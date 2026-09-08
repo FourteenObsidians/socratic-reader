@@ -406,11 +406,6 @@ async function llmChat(req, res) {
      （上下文文字+图一起发给视觉模型，它兼读文字；普通纯文本请求仍走主力模型） */
   const hasImage = JSON.stringify(body.messages || []).includes('"image_url"');
   const useVision = hasImage && cfg.llm.visionModel;
-  /* 临时诊断：记录请求形态（不记内容），排查圈图问题后删除 */
-  try {
-    const shapes = (body.messages || []).map((m) => Array.isArray(m.content) ? 'array[' + m.content.map((p) => p.type).join(',') + ']' : 'text:' + String(m.content || '').length);
-    console.log('[LLM诊断] model=' + (useVision ? cfg.llm.visionModel : cfg.llm.model) + ' | msgs=' + shapes.join(' | ').slice(0, 300));
-  } catch { /* ignore */ }
   const payload = {
     model: useVision ? cfg.llm.visionModel : cfg.llm.model,
     messages: body.messages || [],

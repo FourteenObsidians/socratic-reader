@@ -55,6 +55,8 @@ SR.chat = {
     document.getElementById('chatTitle').textContent = '🤖 苏格拉底引导者';
     document.getElementById('chatContext').classList.add('hidden');
     document.getElementById('chatChips').classList.add('hidden');
+    const ex = document.getElementById('btnExportChat');
+    if (ex) ex.classList.add('hidden');
     document.getElementById('chatMsgs').innerHTML = `
       <div class="chat-empty"><div class="big">🏛</div>
       <p>我是您的苏格拉底式引导者。<br>我将仅通过提问来协助您思考——不提供答案，但会认真对待每一个想法。</p></div>`;
@@ -84,6 +86,9 @@ SR.chat = {
 
   showAiPanel() {
     document.body.classList.remove('ai-hidden');
+    const s = SR.state.session;
+    const ex = document.getElementById('btnExportChat');
+    if (ex) ex.classList.toggle('hidden', !(s && s.messages && s.messages.length));
     setTimeout(() => { const m = document.getElementById('chatMsgs'); m.scrollTop = m.scrollHeight; }, 60);
   },
 
@@ -229,6 +234,47 @@ SR.chat = {
       actions);
   },
 
+  /* ---------- 对话导出（长对话压缩策略） ----------
+     ① 材料投喂消息（带【材料】头的巨型 user 消息）→ 压成一行：书名+部分+字数
+     ② 其余消息：正常保留；AI 单条超长（>1500 字，如带读讲解连发）→ 保留开头 600 + 中间省略标注 + 结尾 400
+     ③ 用户消息一律全量（问题本身就很短，且是学习轨迹的核心） */
+  _squeezeMsg(m) {
+    const t = String(m.content || '');
+    if (m.role === 'user' && t.startsWith('【材料】')) {
+      const title = (/标题：([^\n]+)/.exec(t) || [])[1] || '';
+      const part = (/部分：([^\n（(]+)/.exec(t) || [])[1] || '';
+      return `> 📦 [材料投喂已压缩] ${title.trim()}${part ? ' · ' + part.trim() : ''}（${t.length.toLocaleString()} 字，含教学指令）`;
+    }
+    if (m.role === 'assistant' && t.length > 1500) {
+      return t.slice(0, 600) + '\n\n> …（中段 ' + (t.length - 1000).toLocaleString() + ' 字已省略）…\n\n' + t.slice(-400);
+    }
+    return t;
+  },
+
+  async exportChat() {
+    const s = SR.state.session;
+    if (!s || !s.messages || !s.messages.length) { SR.toast('当前没有可导出的对话'); return; }
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    const modeName = { guide: '苏格拉底带读', part: '部分复盘', sel: '选段研读', review: '巩固复习', explore: '自由探索' }[s.mode] || s.mode;
+    const ctx = s.context || {};
+    const head = [
+      `# ${modeName} · ${ctx.title || '对话记录'}`,
+      '',
+      `> ${ctx.brief ? String(ctx.brief).replace(/<[^>]+>/g, '') + ' · ' : ''}${now} · ${s.messages.length} 条消息`,
+      ctx.partTitle ? `> 部分：${ctx.partTitle}（p.${ctx.from}–${ctx.to}）` : '',
+      '',
+    ].filter((l) => l !== undefined).join('\n');
+    const body = s.messages.map((m) => {
+      const who = m.role === 'user' ? '**我**' : '**引导者**';
+      return `### ${who}\n\n${this._squeezeMsg(m)}\n`;
+    }).join('\n');
+    const filename = `${(ctx.title || '对话').slice(0, 30)}-对话记录`;
+    try {
+      const r = await SR.apiPost('/api/notes/save', { filename, content: head + body, subdir: '对话记录' });
+      SR.toast('📤 已导出 ✅ ' + r.path, 'success', 6000);
+    } catch (e) { SR.toast('导出失败：' + e.message, 'error'); }
+  },
+
   appendStreamBubble() {
     const box = document.getElementById('chatMsgs');
     const el = SR.el('div', { class: 'msg assistant streaming' }, SR.el('div', { class: 'bubble' }));
@@ -303,6 +349,8 @@ SR.chat = {
       input.disabled = false; btnSend.disabled = false;
       input.focus();
       this.renderMsgs();
+      const ex = document.getElementById('btnExportChat');
+      if (ex && s.messages && s.messages.length) ex.classList.remove('hidden');
       SR.persist.save();
     }
   },

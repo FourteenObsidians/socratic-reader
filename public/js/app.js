@@ -247,7 +247,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v34-圈图裁剪修复';
+  SR.VERSION = 'v35-对话导出';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#e3b34c;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -416,6 +416,7 @@ SR.zotero = {
     if (SR.chat.abort) { try { SR.chat.abort.abort(); } catch {} }
   });
   document.getElementById('btnChatClear').addEventListener('click', () => SR.chat.clear());
+  document.getElementById('btnExportChat').addEventListener('click', () => SR.chat.exportChat());   // 对话导出为 md（存 vault）
   /* 闭卷复盘的偷看开关：掀开↔收起，纯视图切换（遮罩由会话开合控制） */
   document.getElementById('btnPeek').addEventListener('click', () => {
     const masked = document.body.classList.toggle('pdf-masked');
