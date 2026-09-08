@@ -605,7 +605,7 @@ SR.reader = {
       disp.forEach((r, ri) => {
         const rect = SR.el('div', {
           class: 'hl', 'data-ann': ann.id,
-          title: '点击管理此批注（换色/笔记/提问/制卡/撤销）',
+          title: ann.note ? '点击查看笔记' : '点击添加笔记',
           style: `background:${ann.color || '#ffd54f'};left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%`,
         });
         if (ann.note && ri === disp.length - 1) {
@@ -699,11 +699,9 @@ SR.reader = {
         title: '复制文字', onclick: () => SR.copyText(a.fullText || a.text),
       }, '📋'));
       ops.appendChild(SR.el('button', {
-        title: '编辑笔记', onclick: () => {
-          const n = window.prompt('笔记内容（留空则仅高亮）：', a.note || '');
-          if (n === null) return;
-          a.note = n.trim(); a.type = a.note ? 'note' : 'hl';
-          this.renderHls(a.page); this.renderAnnotsList(); this.saveAnnDebounced();
+        title: '编辑笔记', onclick: (ev) => {
+          const item = ev.target.closest('.ann-item');
+          this.openNoteCard(a, item ? item.getBoundingClientRect() : null);
         },
       }, '✏'));
       ops.appendChild(SR.el('button', {
@@ -1006,20 +1004,21 @@ SR.reader = {
       const down = this._engDownXY;
       this._suppressAnnClick = !!(down && Math.hypot(ev.clientX - down[0], ev.clientY - down[1]) > 5);
     });
-    /* 点击高亮块 → 批注管理浮条（换色/笔记/提问/制卡/撤销） */
+    /* 点击高亮块 → 笔记卡片（有笔记显示内容，无笔记可直接添加） */
     scroll.addEventListener('click', (ev) => {
       if (this._suppressAnnClick) { this._suppressAnnClick = false; return; }
       const hl = ev.target.closest && ev.target.closest('.hl');
       if (!hl) return;
       const d = SR.state.doc;
       const ann = d && d.ann.find((a) => a.id === hl.dataset.ann);
-      if (ann) this.showAnnMenu(ann, hl.getBoundingClientRect());
+      if (ann) this.openNoteCard(ann, hl.getBoundingClientRect());
     });
-    scroll.addEventListener('scroll', () => this.hideAnnMenu(), { passive: true });
+    scroll.addEventListener('scroll', () => { this.hideAnnMenu(); this.closeNoteCard(); }, { passive: true });
     /* 双击选词 / 三击选整行（原生选中已关闭，自己实现） */
     scroll.addEventListener('dblclick', (ev) => {
       if (!inText(ev.target)) return;
       this.hideAnnMenu();
+      this.closeNoteCard();
       const c = this._caretAt(ev.clientX, ev.clientY, 0);
       if (!c) return;
       const s = c.node.textContent;
@@ -1109,11 +1108,8 @@ SR.reader = {
       bar.appendChild(row);
     });
     mk('📝', ann.note ? '编辑笔记' : '添加笔记', () => {
-      const n = window.prompt('笔记内容（留空则仅高亮）：', ann.note || '');
-      if (n === null) return;
-      ann.note = n.trim(); ann.type = ann.note ? 'note' : 'hl';
-      this.renderHls(ann.page); this.renderAnnotsList(); this.saveAnnDebounced();
-      done(); SR.toast(ann.note ? '笔记已保存 📝' : '笔记已清空');
+      done();
+      this.openNoteCard(ann, bar.getBoundingClientRect());
     });
     mk('💬', '就这段向 AI 提问', () => {
       done();
@@ -1127,6 +1123,77 @@ SR.reader = {
     const w = 250;
     bar.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, rect.left + rect.width / 2 - w / 2)) + 'px';
     bar.style.top = (rect.top > 100 ? rect.top - 48 : rect.bottom + 10) + 'px';
+  },
+
+  /* ===== 笔记卡片：点标记弹出（有笔记显示内容，无笔记可添加），✕/Esc/点外面关闭 ===== */
+  openNoteCard(ann, anchor) {
+    this.closeNoteCard();
+    const names = { '#ffd54f': '黄', '#a5d6a7': '绿', '#90caf9': '蓝', '#ef9a9a': '红', '#ce93d8': '紫' };
+    const save = () => {
+      const n = ta.value.trim();
+      ann.note = n; ann.type = n ? 'note' : 'hl';
+      this.renderHls(ann.page); this.renderAnnotsList(); this.saveAnnDebounced();
+      this.closeNoteCard();
+      SR.toast(n ? '笔记已保存 📝' : '笔记已清空（保留高亮）');
+    };
+    const src = String(ann.fullText || ann.text || '').replace(/\s+/g, ' ').trim();
+    const ta = SR.el('textarea', { class: 'nc-text', placeholder: '写下这段的想法…（Ctrl+Enter 保存）', rows: 4 });
+    ta.value = ann.note || '';
+    const sw = SR.el('span', { class: 'ann-swatches' });
+    for (const c of this.HL_COLORS) {
+      sw.appendChild(SR.el('button', {
+        class: 'swatch' + (c === ann.color ? ' sel' : ''), style: `background:${c}`, title: names[c] || c,
+        onclick: (ev) => {
+          ev.stopPropagation();
+          ann.color = c;
+          sw.querySelectorAll('.swatch').forEach((b) => b.classList.remove('sel'));
+          ev.target.classList.add('sel');
+          this.renderHls(ann.page); this.saveAnnDebounced();
+        },
+      }));
+    }
+    const card = SR.el('div', { class: 'noteCard' },
+      SR.el('div', { class: 'nc-head' },
+        SR.el('span', {}, ann.note ? '📝 笔记' : '📝 添加笔记'),
+        SR.el('span', { class: 'nc-pg' }, 'p.' + ann.page),
+        SR.el('button', { class: 'ghost small', title: '关闭（Esc）', onclick: () => this.closeNoteCard() }, '✕')),
+      src ? SR.el('div', { class: 'nc-quote' }, '“' + (src.length > 120 ? src.slice(0, 120) + '…' : src) + '”') : null,
+      ta,
+      SR.el('div', { class: 'nc-ops' },
+        SR.el('button', { class: 'primary small', onclick: save }, '💾 保存'),
+        sw,
+        SR.el('span', { class: 'nc-gap' }),
+        SR.el('button', { class: 'ghost small', title: '就这段向 AI 提问', onclick: () => {
+          this.closeNoteCard();
+          SR.chat.askAboutSelection({ text: ann.fullText || ann.text, page: ann.page, title: SR.state.doc ? SR.state.doc.title : '' });
+        } }, '💬'),
+        SR.el('button', { class: 'ghost small', title: '删除此批注（连笔记）', onclick: () => {
+          this.removeAnn(ann); this.closeNoteCard(); SR.toast('已删除该批注 ↩');
+        } }, '🗑')));
+    ta.addEventListener('keydown', (ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') { ev.preventDefault(); save(); }
+      if (ev.key === 'Escape') this.closeNoteCard();
+    });
+    document.body.appendChild(card);
+    this._ncEl = card;
+    /* 定位：锚点上方优先，放不下放下方；水平夹在视口内 */
+    card.style.visibility = 'hidden';
+    const r = anchor || { top: window.innerHeight / 2, bottom: window.innerHeight / 2, left: window.innerWidth / 2 - 140, width: 0 };
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    card.style.left = Math.max(8, Math.min(window.innerWidth - cw - 8, r.left + (r.width || 0) / 2 - cw / 2)) + 'px';
+    card.style.top = (r.top - ch - 10 > 8 ? r.top - ch - 10 : Math.min(window.innerHeight - ch - 8, r.bottom + 10)) + 'px';
+    card.style.visibility = '';
+    /* 外点关闭 + Esc（延迟挂载，避免打开那一击立即关掉） */
+    const outside = (ev) => { if (!card.contains(ev.target)) this.closeNoteCard(); };
+    setTimeout(() => document.addEventListener('mousedown', outside), 0);
+    this._ncCleanup = () => document.removeEventListener('mousedown', outside);
+    ta.focus();
+    if (ann.note) ta.setSelectionRange(ta.value.length, ta.value.length);
+  },
+
+  closeNoteCard() {
+    if (this._ncCleanup) { this._ncCleanup(); this._ncCleanup = null; }
+    if (this._ncEl) { this._ncEl.remove(); this._ncEl = null; }
   },
 
   hidePop() {
@@ -1170,6 +1237,8 @@ SR.reader = {
     const s = this._sel;
     if (!s) return;
     if (act === 'color') { this.togglePalette(); return; } // 🎨 弹出色板，不收工具条
+    const tbEl = document.getElementById('selToolbar');   // 收起前记下锚点（笔记卡片定位用）
+    const tbAnchor = tbEl && !tbEl.classList.contains('hidden') ? tbEl.getBoundingClientRect() : null;
     this.hidePop();
     const firstPage = s.pages[0].page;
     if (act === 'hl') {
@@ -1181,10 +1250,10 @@ SR.reader = {
     } else if (act === 'ask') {
       SR.chat.askAboutSelection({ text: s.text, page: firstPage, title: this.doc.title });
     } else if (act === 'note') {
-      const note = window.prompt('笔记内容（留空则仅高亮）：');
-      if (note === null) return;
-      this.addHighlight(s.pages, s.text, firstPage, this.lastColor, note.trim());
-      SR.toast('已保存笔记 📝');
+      /* 先落高亮，再弹笔记卡片就地书写 */
+      const ann = this.addHighlight(s.pages, s.text, firstPage, this.lastColor, '');
+      if (ann) this.openNoteCard(ann, tbAnchor);
+      return;
     }
     window.getSelection().removeAllRanges();
   },
