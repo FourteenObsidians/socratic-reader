@@ -388,7 +388,7 @@ SR.chat = {
     const input = document.getElementById('chatInput');
     input.placeholder = '回答引导者的问题…（Enter 发送，Shift+Enter 换行）';
     const book = (s.context && s.context.title) || '当前书籍';
-    const textPart = `【圈图提问】《${book}》p.${shot.page} 圈选区域。\n【框周正文】${shot.around || '（无文字）'}\n【问题】${question}\n（请针对图作答：描述你看到的结构/数据/关系，必要时引用框周正文；这是你第一次看到这张图，不要装作早就知道。）`;
+    const textPart = `【圈图提问】《${book}》p.${shot.page} 圈选区域。\n【框周正文】${shot.around || '（无文字）'}\n【问题】${question}\n（请针对图作答：描述你看到的结构/数据/关系，必要时引用框周正文；这是你第一次看到这张图，不要装作早就知道。无论图和框周正文是什么语言，你必须全程用简体中文作答；专业术语与图表标签可在括号里保留英文原文。）`;
     this._pendingImages = [
       { type: 'text', text: textPart },
       { type: 'image_url', image_url: { url: shot.b64, page: shot.page } },
