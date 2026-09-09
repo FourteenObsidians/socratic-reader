@@ -294,7 +294,8 @@ function zoteroTitlesMap(dataDir) {
   // 只读打开 zotero.sqlite，把 storage key → 父条目标题（Zotero 运行中也可并发只读）
   const map = new Map();
   const sqlite = path.join(dataDir, 'zotero.sqlite');
-  if (!_DatabaseSync || !fs.existsSync(sqlite)) return { map, reason: 'no-sqlite' };
+  if (!_DatabaseSync) return { map, reason: 'no-sqlite' };   // Node < 22.5：无 node:sqlite 模块（与文件是否存在无关）
+  if (!fs.existsSync(sqlite)) return { map, reason: 'sqlite 文件不存在' };
   let db;
   try {
     db = new _DatabaseSync(sqlite, { readOnly: true });

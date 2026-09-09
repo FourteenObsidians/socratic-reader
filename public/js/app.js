@@ -240,7 +240,11 @@ SR.zotero = {
     draw('');
     panel.appendChild(list);
     if (items.sqliteMeta) {
-      panel.appendChild(SR.el('div', { class: 'hint pad' }, '⚠ 未读到条目标题（' + SR.esc(items.sqliteMeta) + '），当前用文件名代替。Zotero 正在运行时偶发，关闭 Zotero 后刷新即可。'));
+      const m = String(items.sqliteMeta);
+      const tip = m === 'no-sqlite'
+        ? '⚠ 未读到条目标题（当前 Node 无 node:sqlite 模块，需要 Node ≥ 22.5）。重启服务时用新版 Node 即可读取 Zotero 条目标题。'
+        : '⚠ 未读到条目标题（' + SR.esc(m) + '），当前用文件名代替。多为 Zotero 正在运行占用数据库，关闭 Zotero 后刷新即可。';
+      panel.appendChild(SR.el('div', { class: 'hint pad' }, tip));
     }
   },
 };
