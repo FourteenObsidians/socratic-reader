@@ -687,7 +687,7 @@ SR.reader = {
         class: 'swatch' + (c === this.lastColor ? ' sel' : ''),
         style: `background:${c}`,
         title: names[c] || c,
-        onclick: () => { this.lastColor = c; this.renderAnnotsList(); },
+        onclick: () => { this.lastColor = c; this.renderAnnotsList(); this.refreshToolbarColor(); },
       }));
     }
     panel.appendChild(colorRow);
@@ -1156,7 +1156,7 @@ SR.reader = {
           ann.color = c;
           sw.querySelectorAll('.swatch').forEach((b) => b.classList.remove('sel'));
           ev.target.classList.add('sel');
-          this.renderHls(ann.page); this.saveAnnDebounced();
+          this.renderHls(ann.page); this.renderAnnotsList(); this.saveAnnDebounced();   // 侧栏圆点同步刷新
         },
       }));
     }
@@ -1230,6 +1230,7 @@ SR.reader = {
           this.lastColor = c;
           SR.toast(`当前颜色：${names[c] || c}（点 🖍 标记）`, 'info', 1800);
           this.renderAnnotsList();
+          this.refreshToolbarColor();            // 🖍 按钮颜色实时跟随
           pal.classList.add('hidden');
           // 工具条与选区保持，方便接着点 🖍
         },
