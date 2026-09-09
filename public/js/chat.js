@@ -133,6 +133,14 @@ SR.chat = {
       sel: [
         ['✅ 结束这段讨论', () => { SR.state.session.mode = 'done'; this.renderChips('done'); SR.toast('已结束，可继续阅读或开启新对话'); }],
       ],
+      wit: [
+        ['🗺 Claim–Evidence 地图', () => this.send('（指令）跳到 Claim–Evidence 地图阶段：抽取本部分 2–4 个 major claims，表格呈现每个的支撑证据、证据强度与剩余不确定性，然后挑最薄弱的一个问我。')],
+        ['🎯 六维拷问', () => this.send('（指令）跳到六维拷问阶段：从 Whether/What/Why/How/When/To what extent 中挑最能动摇 central claim 的一维，拷问一个具体 claim。')],
+        ['⚔️ 竞争解释', () => this.send('（指令）跳到竞争解释阶段：对关键 finding 列出 2–3 个竞争假设，先问我哪个最可信、什么实验能区分它们，再给分析。')],
+        ['🕵️ 审稿人压力测试', () => this.send('（指令）跳到审稿人压力测试：列 Top-3 挑战并分类（能补实验/已有数据能分析/只能写 limitation/致命伤）。')],
+        ['🏁 收束', () => this.send('（指令）收束：给最小完整故事——Central Question / Central Claim / 2–3 个 Key Findings / 最脆弱的一环 / 值得追问的下一个问题。')],
+        ['📝 WIT 纪要', () => this.summarize('part')],
+      ],
       done: [],
     };
     const list = defs[mode] || [];
