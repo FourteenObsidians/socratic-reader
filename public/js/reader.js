@@ -313,7 +313,8 @@ SR.reader = {
     this.scrollToPage(f);                       // 先滚动（即时反馈 + 触发目标页渲染）
     if (mode === 'off') { console.log('[SR带读] 聚焦模式=off，仅滚动 p.' + f); return; }
     if (quote) {
-      /* 目标页 textLayer 可能还是空的（懒渲染）→ 轮询重试 */
+      /* 目标页 textLayer 可能还是空的（懒渲染）→ 主动渲染搜索窗口 f..f+4，再轮询重试 */
+      for (let p = f; p <= Math.min(t, f + 4); p++) { try { this.renderPage(p); } catch { /* 已渲染 */ } }
       let tries = 0;
       const attempt = () => {
         tries++;
@@ -324,7 +325,7 @@ SR.reader = {
           if (mode === 'flash') this._focusTimer = setTimeout(() => this._clearFocus(), 8000);   // 块高亮 8s
           return;
         }
-        if (tries < 5) { this._focusRetry = setTimeout(attempt, 450); }
+        if (tries < 8) { this._focusRetry = setTimeout(attempt, 500); }
         else { this._pageGlow(f, t, mode); console.log('[SR带读] 短语未命中，降级整页柔光（quote=' + quote.slice(0, 14) + '…）'); }
       };
       attempt();
@@ -350,7 +351,8 @@ SR.reader = {
     if (!pageEl) return null;
     const tl = pageEl.querySelector('.textLayer');
     if (!tl || !tl.children.length) return null;
-    const strip = (s) => String(s || '').replace(/\s+/g, '');
+    /* 索引/探针共用的规范化：去空白 + 去连字符（行尾断词 impor-tant ↔ important 必须视为同一串） */
+    const strip = (s) => String(s || '').replace(/[\s\u00AD]+|[-‐‑‒–—]/g, '');
     const spans = [...tl.querySelectorAll('span')]
       .filter((sp) => !sp.querySelector('span') && strip(sp.textContent).length);
     if (!spans.length) return null;
@@ -366,20 +368,21 @@ SR.reader = {
 
   /* 跨页定位块：开头短语找起点（按页序），结尾短语在起点之后找终点（可跨页）。
      返回 [{pageNo, rows}]（多页时逐页给行带），未找到起点返回 null。
-     探针逐级降长（60→24→12 字符）容忍模型轻微改写/截断。 */
+     探针逐级降长（60→24→12 前缀 → 中段 → 尾段）容忍模型轻微改写/截断/前缀被加引号。 */
   _locateBlock(f, t, quote, endQuote) {
-    const maxP = Math.min(t, f + 2);
+    const maxP = Math.min(t, f + 4);
     const idxs = [];
     for (let p = f; p <= maxP; p++) {
       const ix = this._pageTextIndex(p);
       if (ix) idxs.push({ pageNo: p, ...ix });
     }
     if (!idxs.length) return null;
-    const strip = (s) => String(s || '').replace(/\s+/g, '');
+    const strip = (s) => String(s || '').replace(/[\s\u00AD]+|[-‐‑‒–—]/g, '');
     const probes = (q) => {
       const s = strip(q);
       if (s.length < 4) return [];
-      return [...new Set([s.slice(0, 60), s.slice(0, 24), s.slice(0, 12)].filter((x) => x.length >= 4))];
+      const mid = s.slice(Math.max(4, Math.floor(s.length / 2) - 6), Math.max(4, Math.floor(s.length / 2) - 6) + 12);
+      return [...new Set([s.slice(0, 60), s.slice(0, 24), s.slice(0, 12), mid, s.slice(-12)].filter((x) => x.length >= 4))];
     };
     /* 起点：长探针优先，页序次之 */
     let start = null;
@@ -405,11 +408,16 @@ SR.reader = {
     }
     const spanAt = (pg, ci) => (pg.map[ci] !== undefined ? pg.map[ci] : 0);
     if (!end) {
-      /* 无终点/终点未命中：起点行 +2 行（同页，保守范围） */
+      /* 无终点/终点未命中：起点起 3 个视觉行（span≠行，一行常被拆多段；按合并行带扩展） */
       const pg = start.pg;
       const i0 = spanAt(pg, start.i);
-      const rows = this._rowsFromSpans(pg, i0, Math.min(i0 + 2, pg.spans.length - 1));
-      console.log('[SR带读] 结尾短语未命中（' + String(endQuote || '').slice(0, 14) + '…），退化为起点+2行');
+      let i1 = i0;
+      for (let j = i0; j < pg.spans.length - 1; j++) {
+        i1 = j;
+        if (this._rowsFromSpans(pg, i0, i1).length >= 3) break;   // 集满 3 行带即停
+      }
+      const rows = this._rowsFromSpans(pg, i0, i1);
+      console.log('[SR带读] 结尾短语未命中（' + String(endQuote || '').slice(0, 14) + '…），退化为起点+3行');
       return rows.length ? [{ pageNo: pg.pageNo, rows }] : null;
     }
     /* 起终点齐全：起页 [起点..页尾]，中间页整页，终页 [页首..终点] */
@@ -507,7 +515,7 @@ SR.reader = {
       if (!pageEl) return;
       const tl = pageEl.querySelector('.textLayer');
       if (!tl || !tl.children.length) return;
-      const strip = (s) => String(s || '').replace(/\s+/g, '');
+      const strip = (s) => String(s || '').replace(/[\s\u00AD]+|[-‐‑‒–—]/g, '');
       const A = strip(ann.fullText || ann.text);
       if (A.length < 4) return;
       const spans = [...tl.querySelectorAll('span')]
