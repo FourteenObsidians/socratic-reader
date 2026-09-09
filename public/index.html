@@ -22,7 +22,6 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
     <span class="mode-sep" title="巩固：对抗遗忘"></span>
     <button class="mode-btn" data-mode="review">🧠 巩固</button>
   </nav>
-  <div id="docTitle" class="doc-title" title=""></div>
   <div class="top-actions">
     <button id="btnCards" class="ghost hidden" title="卡片库" style="display:none">🗂 卡片</button>
     <button id="btnAiToggle" class="ghost" title="显示/隐藏 AI 面板">🤖</button>
@@ -252,10 +251,9 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
     <label>陪读伙伴人格（角色只是外衣，追问严格度不变；对应"专家反转效应"，随时可换）
       <select id="setPersonaStyle">
         <option value="classic">🏛 经典苏格拉底（人设原文）</option>
-        <option value="genki">🎮 活泼伙伴（话多、偶尔吐槽）</option>
+        <option value="genki">🎮 活泼伙伴（话多爱调侃，答对了狠狠夸）</option>
         <option value="scholar">🎓 严谨学者（精确、沉稳、引页码）</option>
         <option value="challenger">😤 善意杠精（先开杠再引导）</option>
-        <option value="hype">🔥 热忱学伴（答对了狠狠夸，情绪价值拉满）</option>
       </select>
     </label>
     <label>带读聚焦（AI 讲到某块时 PDF 的反馈方式）
