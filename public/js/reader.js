@@ -1351,7 +1351,7 @@ SR.reader = {
       const key = 'bm:' + n.id;
       this._partIdx[key] = n;
       const done = (d.partsDone || {})[n.id] ? '✅ ' : '';
-      const meta = [`${n.from}–${n.to}页`, n.minutes ? n.minutes + '分' : '', n.risk ? '⚠高风险' : '']
+      const meta = [`${n.from}–${n.to}页`, n.minutes ? n.minutes + '分' : '', n.risk ? '⭐重点' : '']
         .filter(Boolean).join(' · ');
       return `<option value="${key}">${done}${SR.esc(n.title.slice(0, 30))} (${meta})</option>`;
     }).join('');
@@ -1607,7 +1607,7 @@ SR.reader = {
 2. 节点要少而重要（4-14 个），不是照抄目录；
 3. 【禁止】为封面、版权页（Copyright）、献词、目录、作者简介等前置废料生成节点——从正文第一个实质章节开始；
 4. deps 是前置节点 id 数组（可空），体现依赖关系，允许并行路线；
-5. minutes 预计阅读分钟数；difficulty 1-3；risk:true 表示"不真懂后面全白学"的高风险节点；
+5. minutes 预计阅读分钟数；difficulty 1-3；risk:true 表示"不真懂后面全白学"的重点节点；
 6. reason 一句话说明该节点讲什么。
 输出格式（严格遵守，这会被程序解析）：
 - 只输出一个 JSON 数组，不要 markdown 代码块，不要任何解释文字；
@@ -1695,10 +1695,10 @@ SR.reader = {
         const stars = '★'.repeat(n.difficulty || 1) + '☆'.repeat(3 - (n.difficulty || 1));
         const row = SR.el('div', {
           class: 'map-node' + (done ? ' done' : '') + (cur ? ' current' : ''),
-          title: (n.reason || '') + `\np.${n.from}–${n.to} · 约 ${n.minutes || '?'} 分钟` + (n.risk ? ' · ⚠ 高风险节点' : ''),
+          title: (n.reason || '') + `\np.${n.from}–${n.to} · 约 ${n.minutes || '?'} 分钟` + (n.risk ? ' · ⭐ 重点节点' : ''),
         });
         row.appendChild(SR.el('div', { class: 'map-node-title' },
-          (done ? '✅ ' : n.risk ? '⚠️ ' : '') + `${n.id} ${SR.esc(n.title)}`));
+          (done ? '✅ ' : n.risk ? '⭐ ' : '') + `${n.id} ${SR.esc(n.title)}`));
         row.appendChild(SR.el('div', { class: 'map-node-meta' },
           `p.${n.from}–${n.to} · ${n.minutes || '?'}min · ${stars}`));
         const ops = SR.el('div', { class: 'map-node-ops' });
