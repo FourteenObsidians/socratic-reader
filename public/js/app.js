@@ -251,7 +251,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v40-去元叙述';
+  SR.VERSION = 'v41-WIT精读';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#e3b34c;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -340,6 +340,7 @@ SR.zotero = {
 
   /* 阅读器工具栏 */
   document.getElementById('btnPartReview').addEventListener('click', () => SR.chat.startGuidedReading());
+  document.getElementById('btnWitRead').addEventListener('click', () => SR.chat.startWitReading());   // WIT 科研审读
   /* 带读位置徽章：点击跳转并块高亮 PDF 对应位置 */
   document.getElementById('chatMsgs').addEventListener('click', (ev) => {
     const b = ev.target.closest && ev.target.closest('.page-badge');

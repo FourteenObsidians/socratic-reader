@@ -255,7 +255,7 @@ SR.chat = {
     const s = SR.state.session;
     if (!s || !s.messages || !s.messages.length) { SR.toast('当前没有可导出的对话'); return; }
     const now = new Date().toISOString().replace('T', ' ').slice(0, 16);
-    const modeName = { guide: '苏格拉底带读', part: '部分复盘', sel: '选段研读', review: '巩固复习', explore: '自由探索' }[s.mode] || s.mode;
+    const modeName = { guide: '苏格拉底带读', wit: 'WIT 精读', part: '部分复盘', sel: '选段研读', review: '巩固复习', explore: '自由探索' }[s.mode] || s.mode;
     const ctx = s.context || {};
     const head = [
       `# ${modeName} · ${ctx.title || '对话记录'}`,
@@ -442,6 +442,43 @@ SR.chat = {
     return text;
   },
 
+
+  /* ---------- 场景〇·WIT：科研审读（带读教你读懂，WIT 带你审计推理链） ---------- */
+  async startWitReading(partArg) {
+    const d = SR.state.doc;
+    if (!d) { SR.toast('请先打开一个 PDF'); return; }
+    const part = partArg || SR.reader.currentPart();
+    if (!part) { SR.toast('请先框选一个部分（下拉选择或自定义页码段）'); return; }
+    if (part.to - part.from + 1 > 40) {
+      SR.toast('⚠ WIT 精读适合 ≤40 页的段落（整篇论文/一个章节最佳），太长 claim 分析会掺水', 'info', 5000);
+    }
+    SR.toast('正在提取材料…');
+    const mat = await SR.reader.getPartMaterial(part);
+    if (!mat.text) { SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
+    const system = [
+      SR.state.prompts.wit,
+      '\n## 输出格式（硬性要求，放在一切之前）',
+      '每轮分析的回复【第一行】必须是位置标记，格式（二选一）：',
+      '① @p页码|开头短语→结尾短语   ← 优先：高亮本轮分析的段落',
+      '② @p页码|开头短语            ← 只分析一两句时用',
+      '短语划定范围【必须恰好是本轮分析依据的那段文字】：开头短语从其第一句开头逐字复制 8–20 个英文字符（或 5–12 个汉字）；结尾短语从最后一句结尾逐字复制同样长度。骨架轮标整个分析范围；拷问轮只标该 claim 依据的段落。禁止改写、禁止含竖线|和箭头→。',
+      '示例：@p25|Embeddings are the foundation→become geometric ones',
+      '标记行之后另起一行再开始分析。没有这一行界面无法定位 PDF。',
+      `\n## 当前任务：WIT 精读《${d.title}》第 ${part.from}–${part.to} 页（部分：${part.title}）`,
+      '按五阶段推进：骨架 → Claim–Evidence 地图 → 六维拷问 → 竞争解释 → 压力测试。',
+      '第一轮：先输出位置标记（标整个分析范围）→ 一段话骨架（Central Question / Central Claim / storyline）→ 从材料里挑最值得攻击的一个 claim，抛出第一个拷问问题（六维里挑最能动摇它的那一维）。',
+      '用户答完 → 给分析（对错直说、证据锚定数字）→ 推进到下一个 claim 或下一阶段（新一轮记得输出新的位置标记）。',
+      '用户说"跳到地图/压力测试/收束" → 直接切换到该阶段。',
+      '\n一轮 = 一个分析单元 + 一个问题，问完即停。',
+    ].join('\n');
+    const context = {
+      brief: `🔬 ${SR.esc(d.title)} · p.${part.from}–${part.to}（${SR.esc(part.title)}）`,
+      file: d.path, from: part.from, to: part.to, title: d.title, partTitle: part.title,
+      text: mat.text, highlights: mat.highlights,
+    };
+    this.newSession('wit', `🔬 ${d.title} · WIT 精读`, context, system);
+    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【正文（可能截断）】\n${mat.text.slice(0, 40000)}\n\n【我的批注（读时标注的关注点，优先围绕它们拷问）】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n【输出格式契约（最高优先级）】\n你的回复第一行必须严格是这一行（单独成行，页码和短语替换为实际值）：\n@p页码|开头短语→结尾短语\n开头短语逐字复制本轮分析段落第一句的开头 8–20 个英文字符；结尾短语逐字复制其最后一句的结尾 8–20 个英文字符（段落很短时可省略箭头和结尾短语）。\n例如本轮分析第 25 页起的三段，以 “Embeddings are the foundation...” 开始、以 “…become geometric ones.” 结束，第一行就是：\n@p25|Embeddings are the foundation→become geometric ones\n此行用于界面定位并高亮，缺失或范围对不上会让高亮文不对题。第二行起才是你的分析与提问。\n\n现在开始 WIT 精读：骨架 → 第一个拷问问题。`, mat.images || []);
+  },
 
   async startGuidedReading(partArg) {
     const d = SR.state.doc;
@@ -644,7 +681,7 @@ SR.chat = {
     document.getElementById('sumOpen').classList.add('hidden');
     const isPart = kind === 'part' && (s.mode === 'part' || s.mode === 'guide') && s.context && s.context.text;
     const isReview = s.mode === 'review';
-    document.getElementById('sumTitle').textContent = isPart ? (s.mode === 'guide' ? '🎧 带读总结' : '📝 重点总结 · 部分复盘') : (isReview ? '🧠 巩固记录' : '📝 探索纪要');
+    document.getElementById('sumTitle').textContent = isPart ? (s.mode === 'guide' ? '🎧 带读总结' : s.mode === 'wit' ? '🔬 WIT 精读纪要' : '📝 重点总结 · 部分复盘') : (isReview ? '🧠 巩固记录' : '📝 探索纪要');
     let userMsg = '';
     if (isPart) {
       const c = s.context;
