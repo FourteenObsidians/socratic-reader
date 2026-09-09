@@ -37,6 +37,7 @@ SR.settings = {
     else { keyEl.value = c.llm.apiKey || ''; keyEl.placeholder = 'sk-…（OpenAI 兼容密钥；本地 Ollama 可留空）'; }
     document.getElementById('setModel').value = c.llm.model;
     document.getElementById('setVisionModel').value = c.llm.visionModel || '';
+    document.getElementById('setAgentLang').value = c.llm.agentLang || 'zh';
     document.getElementById('setTemp').value = c.llm.temperature;
     document.getElementById('setMaxTokens').value = c.llm.maxTokens;
     document.getElementById('setVault').value = c.vaultPath;
@@ -78,6 +79,7 @@ SR.settings = {
         apiKey: document.getElementById('setApiKey').value.trim(),
         model: document.getElementById('setModel').value.trim(),
         visionModel: document.getElementById('setVisionModel').value.trim(),
+        agentLang: document.getElementById('setAgentLang').value === 'en' ? 'en' : 'zh',
         temperature: Number(document.getElementById('setTemp').value) || 0.7,
         maxTokens: Math.max(0, Number(document.getElementById('setMaxTokens').value) || 0),   // 0 = 不限制
       },

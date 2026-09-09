@@ -319,8 +319,13 @@ SR.chat = {
       s.messages[s.messages.length - 1] = { role: 'user', content: this._pendingImages };
       this._pendingImages = null;
     }
+    /* 输出语言指令：随配置注入 system 尾部（所有会话类型统一生效，含无 system 的圈图壳会话） */
+    const lang = (SR.state.config && SR.state.config.llm && SR.state.config.llm.agentLang) || 'zh';
+    const langDirective = lang === 'en'
+      ? '【OUTPUT LANGUAGE】Always respond in English, regardless of the language of the reading material, figures, or the user. Keep technical terms as-is; original text quotations stay in their source language.'
+      : '【输出语言】无论阅读材料、图表或用户使用什么语言，你必须全程用简体中文作答；专业术语、代码、图表标签可在括号里保留英文原文，引用原文时保留原文。';
     const msgs = [
-      { role: 'system', content: extraSystem ? [s.system, extraSystem].filter(Boolean).join('\n\n') : s.system },
+      { role: 'system', content: [s.system, extraSystem, langDirective].filter(Boolean).join('\n\n') },
       ...s.messages,
     ];
     try {
@@ -388,7 +393,11 @@ SR.chat = {
     const input = document.getElementById('chatInput');
     input.placeholder = '回答引导者的问题…（Enter 发送，Shift+Enter 换行）';
     const book = (s.context && s.context.title) || '当前书籍';
-    const textPart = `【圈图提问】《${book}》p.${shot.page} 圈选区域。\n【框周正文】${shot.around || '（无文字）'}\n【问题】${question}\n（请针对图作答：描述你看到的结构/数据/关系，必要时引用框周正文；这是你第一次看到这张图，不要装作早就知道。无论图和框周正文是什么语言，你必须全程用简体中文作答；专业术语与图表标签可在括号里保留英文原文。）`;
+    const lang = (SR.state.config && SR.state.config.llm && SR.state.config.llm.agentLang) || 'zh';
+    const langNote = lang === 'en'
+      ? 'Respond in English. '
+      : '无论图和框周正文是什么语言，你必须全程用简体中文作答；专业术语与图表标签可在括号里保留英文原文。';
+    const textPart = `【圈图提问】《${book}》p.${shot.page} 圈选区域。\n【框周正文】${shot.around || '（无文字）'}\n【问题】${question}\n（请针对图作答：描述你看到的结构/数据/关系，必要时引用框周正文；这是你第一次看到这张图，不要装作早就知道。${langNote}）`;
     this._pendingImages = [
       { type: 'text', text: textPart },
       { type: 'image_url', image_url: { url: shot.b64, page: shot.page } },

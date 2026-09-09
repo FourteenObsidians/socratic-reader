@@ -27,6 +27,8 @@ const DEFAULT_CONFIG = {
     maxTokens: 0,   // 0 = 不限制（推理模型的思考 token 也计入 max_tokens，设小会导致正文被思考挤空）
     // 视觉模型（可选）：带图消息自动路由到这里（如 glm-4v-flash / gpt-4o-mini / qwen-vl-plus）
     visionModel: '',
+    // Agent 输出语言：zh=简体中文（默认），en=English
+    agentLang: 'zh',
   },
   // Obsidian vault（相对路径基于本文件所在目录）
   vaultPath: '../Study',

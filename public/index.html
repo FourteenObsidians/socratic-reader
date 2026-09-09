@@ -223,6 +223,12 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
     <label>视觉模型（可选，处理带图消息）
       <input id="setVisionModel" list="modelList" placeholder="留空=不支持图表；如 glm-4v-flash">
     </label>
+    <label>Agent 输出语言
+      <select id="setAgentLang" style="width:140px">
+        <option value="zh">简体中文</option>
+        <option value="en">English</option>
+      </select>
+    </label>
     <div class="row">
       <label>温度 <input id="setTemp" type="number" step="0.1" min="0" max="2" style="width:90px"></label>
       <label>最大 tokens（0=不限制；推理模型思考也计入，太小正文会被挤空） <input id="setMaxTokens" type="number" step="256" style="width:110px"></label>
