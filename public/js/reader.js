@@ -1263,6 +1263,11 @@ SR.reader = {
       const ann = this.addHighlight(s.pages, s.text, firstPage, this.lastColor, '');
       if (ann) this.openNoteCard(ann, tbAnchor);
       return;
+    } else if (act === 'term') {
+      /* 名词速查卡：岔题补课不污染带读主会话 */
+      this.hidePop();
+      SR.chat.openTermCard(s.text, { page: firstPage });
+      return;
     }
     window.getSelection().removeAllRanges();
   },

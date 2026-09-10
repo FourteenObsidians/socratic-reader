@@ -298,6 +298,120 @@ SR.chat = {
   },
 
   /* ---------- 发送 ---------- */
+  /* ---------- 名词速查卡：带读途中岔题补课，独立消息流，主会话零污染 ---------- */
+  openTermCard(term, extraCtx) {
+    const t = String(term || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!t) return;
+    this.closeTermCard();
+    const s = SR.state.session;
+    /* 阅读写照：只给解释器定语境，不带走主会话消息（主线不受污染的关键） */
+    const ctxBits = [];
+    if (s && s.context && s.context.title) ctxBits.push(`《${s.context.title}》${s.context.partTitle ? ' · ' + s.context.partTitle : ''}`);
+    if (extraCtx && extraCtx.page) ctxBits.push(`名词出现在 p.${extraCtx.page}`);
+    const recent = ((s && s.messages) || []).slice(-4)
+      .map((m) => (m.role === 'user' ? '用户：' : '引导者：') + String(m.content).replace(/\s+/g, ' ').slice(0, 160)).join('\n');
+    const T = {
+      term: t,
+      system: [
+        '你是名词速查卡：用户正在苏格拉底带读中遇到一个想搞清楚的名词，需要快速补课后立刻回到阅读。',
+        '规则：',
+        '1. 首轮解释 150–300 字：是什么 → 在当前阅读语境里扮演什么角色 → 一个最小例子或类比（数值或因果链，不糊弄）。关键术语中英对照。',
+        '2. 用户追问就直接答，不反问、不苏格拉底——他要的是快速补课，不是再来一轮引导。',
+        '3. 同一个词在不同领域含义不同，解释必须贴合【阅读语境】。',
+        '4. 全程简体中文；不要输出 @p 位置标记（这不是带读）。',
+        ctxBits.length ? '\n【阅读语境】' + ctxBits.join(' · ') : '',
+        recent ? '\n【最近讨论摘要（仅供理解语境）】\n' + recent : '',
+      ].filter(Boolean).join('\n'),
+      messages: [],
+    };
+    this._term = T;
+    const thread = SR.el('div', { class: 'tc-thread' });
+    T.threadEl = thread;
+    const input = SR.el('input', { class: 'tc-input', placeholder: '继续追问…（Enter 发送，Esc 关卡片）' });
+    const send = () => {
+      const q = input.value.trim();
+      if (!q || T.busy) return;
+      input.value = '';
+      T.messages.push({ role: 'user', content: q });
+      T.threadEl.appendChild(SR.el('div', { class: 'tc-q' }, '❓ ' + q.slice(0, 60)));
+      this._termStream();
+    };
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); send(); }
+      if (ev.key === 'Escape') { ev.stopPropagation(); this.closeTermCard(); }
+    });
+    const card = SR.el('div', { class: 'termCard' },
+      SR.el('div', { class: 'tc-head' },
+        SR.el('span', { class: 'tc-title' }, '📖 名词速查'),
+        SR.el('span', { class: 'tc-term' }, t),
+        SR.el('button', { class: 'ghost small', title: '关掉回到带读（主对话不受影响）', onclick: () => this.closeTermCard() }, '✕')),
+      thread,
+      SR.el('div', { class: 'tc-bar' }, input,
+        SR.el('button', { class: 'primary small', onclick: send }, '追问')),
+      SR.el('div', { class: 'tc-foot' }, '带读未受影响——回去接着答引导者刚才的问题'));
+    document.body.appendChild(card);
+    this._termEl = card;
+    const esc = (ev) => { if (ev.key === 'Escape') this.closeTermCard(); };
+    document.addEventListener('keydown', esc);
+    this._termCleanup = () => document.removeEventListener('keydown', esc);
+    this._termAsk(`请解释名词：「${t}」`, t);
+  },
+
+  async _termStream() {
+    const T = this._term; if (!T) return;
+    T.busy = true;
+    const ans = SR.el('div', { class: 'tc-answer' }, '…');
+    T.threadEl.appendChild(ans);
+    T.threadEl.scrollTop = T.threadEl.scrollHeight;
+    let acc = '';
+    try {
+      acc = await SR.chatStream(
+        [{ role: 'system', content: T.system }, ...T.messages],
+        { onDelta: (_d, all) => { ans.textContent = all; T.threadEl.scrollTop = T.threadEl.scrollHeight; } },
+      );
+      ans.innerHTML = SR.md(acc);
+      T.messages.push({ role: 'assistant', content: acc });
+    } catch (e) {
+      ans.innerHTML = `<b style="color:var(--red)">出错了：</b>${SR.esc(e.message)}`;
+    } finally {
+      T.busy = false;
+      T.threadEl.scrollTop = T.threadEl.scrollHeight;
+    }
+  },
+
+  _termAsk(text, display) {
+    const T = this._term; if (!T) return;
+    T.messages.push({ role: 'user', content: text });
+    T.threadEl.appendChild(SR.el('div', { class: 'tc-q' }, '❓ ' + (display || String(text).slice(0, 60))));
+    this._termStream();
+  },
+
+  closeTermCard() {
+    if (this._termCleanup) { this._termCleanup(); this._termCleanup = null; }
+    if (this._termEl) { this._termEl.remove(); this._termEl = null; }
+    this._term = null;
+  },
+
+  /* 聊天气泡里选中文字 → 浮出 📖 小按钮（点开速查卡） */
+  _showTermBtn(rect, txt) {
+    const old = document.querySelector('.term-pop'); if (old) old.remove();
+    const t = String(txt || '').trim();
+    if (!rect || t.length < 2 || t.length > 80) return;
+    const btn = SR.el('button', { class: 'term-pop', title: '名词速查卡（不中断带读）' }, '📖 速查');
+    btn.addEventListener('mousedown', (ev) => ev.preventDefault());   // 保住选区
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      this.openTermCard(t);
+      btn.remove();
+    });
+    document.body.appendChild(btn);
+    btn.style.left = Math.max(8, Math.min(window.innerWidth - 110, rect.left + rect.width / 2 - 45)) + 'px';
+    btn.style.top = Math.max(8, rect.top - 34) + 'px';
+    setTimeout(() => document.addEventListener('mousedown', function once(ev2) {
+      if (!(ev2.target && ev2.target.closest && ev2.target.closest('.term-pop'))) { btn.remove(); document.removeEventListener('mousedown', once); }
+    }), 0);
+  },
+
   async send(text) {
     const s = SR.state.session;
     if (!s) { SR.toast('请先开启一个对话（复盘 / 选段提问 / 自由探索）'); return; }

@@ -251,7 +251,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v42-活泼升级';
+  SR.VERSION = 'v43-名词速查卡';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#e3b34c;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -422,6 +422,18 @@ SR.zotero = {
   });
   document.getElementById('btnChatClear').addEventListener('click', () => SR.chat.clear());
   document.getElementById('btnExportChat').addEventListener('click', () => SR.chat.exportChat());   // 对话导出为 md（存 vault）
+  /* 聊天气泡里选中文字 → 浮出 📖 速查按钮（带读岔题补课，不污染主会话） */
+  document.getElementById('chatMsgs').addEventListener('mouseup', () => {
+    setTimeout(() => {
+      let rect = null, txt = '';
+      try {
+        const sel = window.getSelection();
+        txt = sel && sel.toString();
+        if (txt && sel.rangeCount) rect = sel.getRangeAt(0).getBoundingClientRect();
+      } catch { /* 忽略 */ }
+      SR.chat._showTermBtn(rect, txt);
+    }, 10);
+  });
   /* 闭卷复盘的偷看开关：掀开↔收起，纯视图切换（遮罩由会话开合控制） */
   document.getElementById('btnPeek').addEventListener('click', () => {
     const masked = document.body.classList.toggle('pdf-masked');

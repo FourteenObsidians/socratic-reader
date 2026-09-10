@@ -178,6 +178,41 @@ body.box-selecting #pdfScroll .textLayer span { cursor: crosshair !important; }
 }
 .img-ask-capsule b { color: var(--ink); font-weight: 600; }
 
+/* ===== 名词速查卡（带读岔题补课，主会话零污染） ===== */
+.term-pop {
+  position: fixed; z-index: 92; padding: 3px 10px; font-size: 12.5px; cursor: pointer;
+  background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35);
+}
+.term-pop:hover { border-color: var(--accent-dim); }
+.termCard {
+  position: fixed; z-index: 96; right: 24px; top: 76px; width: 400px; max-width: calc(100vw - 32px);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(0,0,0,.5); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.termCard .tc-head { display: flex; align-items: center; gap: 8px; }
+.termCard .tc-title { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.termCard .tc-term {
+  font-weight: 600; font-size: 14px; color: var(--ink, var(--text));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+}
+.termCard .tc-head button { padding: 1px 7px; }
+.termCard .tc-thread {
+  max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+  padding: 2px 4px; scroll-behavior: smooth;
+}
+.termCard .tc-q { font-size: 12.5px; color: var(--muted); padding: 4px 8px; border-left: 2px solid var(--accent-dim); }
+.termCard .tc-answer { font-size: 13.5px; line-height: 1.6; color: var(--text); }
+.termCard .tc-answer p { margin: 0.35em 0; }
+.termCard .tc-bar { display: flex; gap: 6px; }
+.termCard .tc-input {
+  flex: 1; background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 7px; padding: 6px 10px; font: inherit; font-size: 13px;
+}
+.termCard .tc-input:focus { outline: none; border-color: var(--accent-dim); }
+.termCard .tc-foot { font-size: 11px; color: var(--muted); text-align: center; }
+
 /* 复盘闭卷模式：布局完全不动，PDF 区盖一层毛玻璃（backdrop-filter 模糊到读不清字，
    检索练习保住，也不会像收起列那样把页面挤变形）；点击穿透被挡，防顺手翻书 */
 body.pdf-masked.mode-reader #center { position: relative; }
