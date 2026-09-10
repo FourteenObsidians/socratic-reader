@@ -180,9 +180,9 @@ body.box-selecting #pdfScroll .textLayer span { cursor: crosshair !important; }
 
 /* ===== 名词速查卡（带读岔题补课，主会话零污染） ===== */
 .term-pop {
-  position: fixed; z-index: 92; padding: 3px 10px; font-size: 12.5px; cursor: pointer;
+  position: fixed; z-index: 200; padding: 3px 10px; font-size: 12.5px; cursor: pointer;
   background: var(--panel2); color: var(--text); border: 1px solid var(--border);
-  border-radius: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  border-radius: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.45);
 }
 .term-pop:hover { border-color: var(--accent-dim); }
 .termCard {

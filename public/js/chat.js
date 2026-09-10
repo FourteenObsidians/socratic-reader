@@ -447,7 +447,9 @@ SR.chat = {
     });
     document.body.appendChild(btn);
     btn.style.left = Math.max(8, Math.min(window.innerWidth - 110, rect.left + rect.width / 2 - 45)) + 'px';
-    btn.style.top = Math.max(8, rect.top - 34) + 'px';
+    /* 选区贴近卡片/窗口顶部时，按钮翻到选区下方，避免被卡片头部挡住 */
+    const top = rect.top - 34;
+    btn.style.top = (top < 70 ? Math.min(window.innerHeight - 40, rect.bottom + 8) : Math.max(8, top)) + 'px';
     setTimeout(() => document.addEventListener('mousedown', function once(ev2) {
       if (!(ev2.target && ev2.target.closest && ev2.target.closest('.term-pop'))) { btn.remove(); document.removeEventListener('mousedown', once); }
     }), 0);
