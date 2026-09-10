@@ -212,6 +212,8 @@ body.box-selecting #pdfScroll .textLayer span { cursor: crosshair !important; }
 }
 .termCard .tc-input:focus { outline: none; border-color: var(--accent-dim); }
 .termCard .tc-foot { font-size: 11px; color: var(--muted); text-align: center; }
+.termCard.nested { border-color: var(--accent-dim); box-shadow: 0 12px 38px rgba(0,0,0,.55); }
+.termCard.nested .tc-title { color: var(--accent-dim, var(--muted)); }
 
 /* 复盘闭卷模式：布局完全不动，PDF 区盖一层毛玻璃（backdrop-filter 模糊到读不清字，
    检索练习保住，也不会像收起列那样把页面挤变形）；点击穿透被挡，防顺手翻书 */

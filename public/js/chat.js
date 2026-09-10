@@ -8,6 +8,7 @@ SR.chat = {
   /* ---------- 会话管理 ---------- */
   newSession(mode, title, context, systemPrompt) {
     this.clearStream();
+    this.closeAllTermCards();   // 换会话时清空速查卡栈（术语链属于旧语境）
     this._focusKey = null;   // 带读位置标记去重（每次新标记只触发一次聚焦）
     SR.state.session = {
       id: Date.now(), mode, title, context,
@@ -63,6 +64,7 @@ SR.chat = {
   },
 
   clear() {
+    this.closeAllTermCards();   // 清对话页连同速查卡栈
     SR.persist.dropSession(SR.persist.bucketOf(SR.state.session));   // 只删本书的对话页，别的书不受影响
     SR.state.session = null;
     SR.persist.clearSession();
@@ -298,20 +300,27 @@ SR.chat = {
   },
 
   /* ---------- 发送 ---------- */
-  /* ---------- 名词速查卡：带读途中岔题补课，独立消息流，主会话零污染 ---------- */
+  /* ---------- 名词速查卡：带读途中岔题补课，独立消息流，主会话零污染 ----------
+     支持递归：卡片里的解释又出现新名词 → 选中 → 再开一张卡（可叠多层，Esc 逐层关） */
   openTermCard(term, extraCtx) {
     const t = String(term || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     if (!t) return;
-    this.closeTermCard();
+    this._termStack = this._termStack || [];
+    const depth = this._termStack.length;
+    if (depth >= 5) { SR.toast('速查卡最多叠 5 层——先把这几层消化掉 🙂', 'info'); return; }
     const s = SR.state.session;
     /* 阅读写照：只给解释器定语境，不带走主会话消息（主线不受污染的关键） */
     const ctxBits = [];
     if (s && s.context && s.context.title) ctxBits.push(`《${s.context.title}》${s.context.partTitle ? ' · ' + s.context.partTitle : ''}`);
     if (extraCtx && extraCtx.page) ctxBits.push(`名词出现在 p.${extraCtx.page}`);
-    const recent = ((s && s.messages) || []).slice(-4)
-      .map((m) => (m.role === 'user' ? '用户：' : '引导者：') + String(m.content).replace(/\s+/g, ' ').slice(0, 160)).join('\n');
+    const recent = depth === 0
+      ? (((s && s.messages) || []).slice(-4)
+        .map((m) => (m.role === 'user' ? '用户：' : '引导者：') + String(m.content).replace(/\s+/g, ' ').slice(0, 160)).join('\n'))
+      : '';
+    /* 术语链：A → B → C，让解释器知道这个词是从哪条追问链上冒出来的 */
+    const chain = this._termStack.map((c) => c.term);
     const T = {
-      term: t,
+      term: t, depth, messages: [],
       system: [
         '你是名词速查卡：用户正在苏格拉底带读中遇到一个想搞清楚的名词，需要快速补课后立刻回到阅读。',
         '规则：',
@@ -320,45 +329,69 @@ SR.chat = {
         '3. 同一个词在不同领域含义不同，解释必须贴合【阅读语境】。',
         '4. 全程简体中文；不要输出 @p 位置标记（这不是带读）。',
         ctxBits.length ? '\n【阅读语境】' + ctxBits.join(' · ') : '',
+        chain.length ? `\n【术语链】${chain.join(' → ')} → ${t}（当前）：这个词是用户在查「${chain[chain.length - 1]}」时遇到的。解释 ${t} 时可以假定用户已了解链条上游的概念（不必重讲），但要点明它与上游词的关系（上位/并列/组件/对比）。` : '',
         recent ? '\n【最近讨论摘要（仅供理解语境）】\n' + recent : '',
       ].filter(Boolean).join('\n'),
-      messages: [],
     };
-    this._term = T;
     const thread = SR.el('div', { class: 'tc-thread' });
     T.threadEl = thread;
-    const input = SR.el('input', { class: 'tc-input', placeholder: '继续追问…（Enter 发送，Esc 关卡片）' });
+    const input = SR.el('input', { class: 'tc-input', placeholder: depth ? '继续追问…（Enter 发送，Esc 关这张）' : '继续追问…（Enter 发送，Esc 关卡片）' });
     const send = () => {
       const q = input.value.trim();
       if (!q || T.busy) return;
       input.value = '';
       T.messages.push({ role: 'user', content: q });
-      T.threadEl.appendChild(SR.el('div', { class: 'tc-q' }, '❓ ' + q.slice(0, 60)));
-      this._termStream();
+      thread.appendChild(SR.el('div', { class: 'tc-q' }, '❓ ' + q.slice(0, 60)));
+      this._termStream(T);
     };
     input.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') { ev.preventDefault(); send(); }
       if (ev.key === 'Escape') { ev.stopPropagation(); this.closeTermCard(); }
     });
-    const card = SR.el('div', { class: 'termCard' },
+    const parentTerm = chain.length ? chain[chain.length - 1] : null;
+    const card = SR.el('div', { class: 'termCard' + (depth ? ' nested' : '') },
       SR.el('div', { class: 'tc-head' },
-        SR.el('span', { class: 'tc-title' }, '📖 名词速查'),
+        SR.el('span', { class: 'tc-title' }, depth ? `📖 速查 · 第 ${depth + 1} 层` : '📖 名词速查'),
         SR.el('span', { class: 'tc-term' }, t),
-        SR.el('button', { class: 'ghost small', title: '关掉回到带读（主对话不受影响）', onclick: () => this.closeTermCard() }, '✕')),
+        SR.el('button', { class: 'ghost small', title: parentTerm ? `关掉这张，回到「${parentTerm}」的卡片` : '关掉回到带读（主对话不受影响）', onclick: () => this.closeTermCard() }, '✕')),
       thread,
       SR.el('div', { class: 'tc-bar' }, input,
         SR.el('button', { class: 'primary small', onclick: send }, '追问')),
-      SR.el('div', { class: 'tc-foot' }, '带读未受影响——回去接着答引导者刚才的问题'));
+      SR.el('div', { class: 'tc-foot' },
+        parentTerm ? `解释里的新词可选中再开卡 · ✕ 回到「${parentTerm}」` : '解释里的新词可选中再开一张卡 · 带读未受影响'));
     document.body.appendChild(card);
-    this._termEl = card;
-    const esc = (ev) => { if (ev.key === 'Escape') this.closeTermCard(); };
-    document.addEventListener('keydown', esc);
-    this._termCleanup = () => document.removeEventListener('keydown', esc);
-    this._termAsk(`请解释名词：「${t}」`, t);
+    /* 层叠定位：越深越往左下错开，z-index 递增，露出下层标题栏方便切换视线 */
+    if (depth) {
+      card.style.right = (24 + depth * 26) + 'px';
+      card.style.top = (76 + depth * 24) + 'px';
+      card.style.width = Math.max(300, 400 - depth * 14) + 'px';
+    }
+    card.style.zIndex = 96 + depth;
+    T.el = card;
+    /* 卡片内选中文字 → 递归再开一张（术语链向下生长） */
+    card.addEventListener('mouseup', () => {
+      setTimeout(() => {
+        let rect = null, txt = '';
+        try {
+          const sel = window.getSelection();
+          txt = sel && sel.toString();
+          if (txt && sel.rangeCount) rect = sel.getRangeAt(0).getBoundingClientRect();
+        } catch { /* 忽略 */ }
+        this._showTermBtn(rect, txt, T);
+      }, 10);
+    });
+    /* Esc 监听：栈从空到非空时挂一次，栈空时卸载 */
+    if (depth === 0) {
+      const esc = (ev) => { if (ev.key === 'Escape' && this._termStack && this._termStack.length) this.closeTermCard(); };
+      document.addEventListener('keydown', esc);
+      this._termCleanup = () => document.removeEventListener('keydown', esc);
+    }
+    this._termStack.push(T);
+    this._termAsk(T, `请解释名词：「${t}」`, t);
   },
 
-  async _termStream() {
-    const T = this._term; if (!T) return;
+  async _termStream(T) {
+    if (!T) return;
     T.busy = true;
     const ans = SR.el('div', { class: 'tc-answer' }, '…');
     T.threadEl.appendChild(ans);
@@ -379,29 +412,37 @@ SR.chat = {
     }
   },
 
-  _termAsk(text, display) {
-    const T = this._term; if (!T) return;
+  _termAsk(T, text, display) {
+    if (!T) return;
     T.messages.push({ role: 'user', content: text });
     T.threadEl.appendChild(SR.el('div', { class: 'tc-q' }, '❓ ' + (display || String(text).slice(0, 60))));
-    this._termStream();
+    this._termStream(T);
   },
 
+  /* 关最上面一张（Esc / ✕）；栈空则卸载监听 */
   closeTermCard() {
-    if (this._termCleanup) { this._termCleanup(); this._termCleanup = null; }
-    if (this._termEl) { this._termEl.remove(); this._termEl = null; }
-    this._term = null;
+    const st = this._termStack;
+    if (!st || !st.length) { if (this._termCleanup) { this._termCleanup(); this._termCleanup = null; } return; }
+    const T = st.pop();
+    if (T && T.el) T.el.remove();
+    const pop = document.querySelector('.term-pop'); if (pop) pop.remove();
+    if (!st.length && this._termCleanup) { this._termCleanup(); this._termCleanup = null; }
   },
 
-  /* 聊天气泡里选中文字 → 浮出 📖 小按钮（点开速查卡） */
-  _showTermBtn(rect, txt) {
+  closeAllTermCards() {
+    while (this._termStack && this._termStack.length) this.closeTermCard();
+  },
+
+  /* 选中文字 → 浮出 📖 小按钮（带读气泡 / PDF / 速查卡内皆可；parentCard 存在则为递归层） */
+  _showTermBtn(rect, txt, parentCard) {
     const old = document.querySelector('.term-pop'); if (old) old.remove();
     const t = String(txt || '').trim();
     if (!rect || t.length < 2 || t.length > 80) return;
-    const btn = SR.el('button', { class: 'term-pop', title: '名词速查卡（不中断带读）' }, '📖 速查');
+    const btn = SR.el('button', { class: 'term-pop', title: parentCard ? '在这个词上再开一张速查卡（术语链向下）' : '名词速查卡（不中断带读）' }, '📖 速查');
     btn.addEventListener('mousedown', (ev) => ev.preventDefault());   // 保住选区
     btn.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      this.openTermCard(t);
+      this.openTermCard(t, parentCard ? { parent: parentCard } : null);
       btn.remove();
     });
     document.body.appendChild(btn);
