@@ -43,6 +43,7 @@ SR.settings = {
     document.getElementById('setVault').value = c.vaultPath;
     document.getElementById('setCardsDir').value = c.cards.vaultSubdir;
     document.getElementById('setSumDir').value = c.cards.summariesSubdir;
+    document.getElementById('setWikiDir').value = (c.learning && c.learning.wikiSubdir) || '学习Wiki';
     document.getElementById('setRoots').value = (c.libraryRoots || []).join('\n');
     document.getElementById('setPersona').value = c.personaPath;
     document.getElementById('setPersonaStyle').value = c.personaStyle || 'classic';
@@ -92,6 +93,9 @@ SR.settings = {
       cards: {
         vaultSubdir: document.getElementById('setCardsDir').value.trim() || 'Cards',
         summariesSubdir: document.getElementById('setSumDir').value.trim() || '阅读总结',
+      },
+      learning: {
+        wikiSubdir: document.getElementById('setWikiDir').value.trim() || '学习Wiki',
       },
     };
   },

@@ -46,6 +46,9 @@ const DEFAULT_CONFIG = {
     vaultSubdir: 'Cards',          // 卡片 Markdown 存放子目录（vault 内）
     summariesSubdir: '阅读总结',    // 苏格拉底复盘总结存放子目录
   },
+  learning: {
+    wikiSubdir: '学习Wiki',        // 学习索引（LLM 记忆入口）存放子目录（vault 内）
+  },
 };
 
 function deepMerge(base, over) {
@@ -232,11 +235,13 @@ async function* walkNotes(dir, depth = 0) {
     else if (/\.(md|txt|canvas)$/i.test(e.name)) yield p;
   }
 }
-async function searchNotes(vault, query, limit = 30) {
+async function searchNotes(vault, query, limit = 30, subdir = '') {
   const terms = String(query || '').split(/[\s,，、]+/).filter(Boolean).map((t) => t.toLowerCase());
   if (!terms.length) return [];
   const hits = [];
+  const scope = subdir ? subdir.replace(/[\\/]+$/, '').replace(/[\\/]+/g, path.sep) : '';
   for await (const file of walkNotes(vault)) {
+    if (scope && !path.relative(vault, file).startsWith(scope + path.sep)) continue;
     let content = '';
     try { content = await fsp.readFile(file, 'utf8'); } catch { continue; }
     const lower = content.toLowerCase();
@@ -258,6 +263,72 @@ async function searchNotes(vault, query, limit = 30) {
   }
   hits.sort((a, b) => b.score - a.score);
   return hits.slice(0, limit);
+}
+
+/* ---------------- 学习 Wiki 索引（AI 长期记忆入口） ----------------
+   wiki-index.json 是机器可维护状态；Wiki索引.md 是人可读、Obsidian 可链接、
+   全文检索可命中的入口。两者由归档流程同步更新。 */
+function wikiIndexFiles(vault, subdir) {
+  const dir = path.join(vault, subdir);
+  return { dir, json: path.join(dir, 'wiki-index.json'), md: path.join(dir, 'Wiki索引.md') };
+}
+
+async function readWikiIndex(jsonFile) {
+  try { return JSON.parse(await fsp.readFile(jsonFile, 'utf8')); } catch { return { entries: [] }; }
+}
+
+function wikiTag(s) {
+  return String(s || '').replace(/^[#\s]+|[^\p{L}\p{N}_-]+/gu, '_').slice(0, 32) || '未分类';
+}
+
+function renderWikiIndexMD(entries) {
+  const list = [...entries].sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')));
+  const lines = list.map((e) => {
+    const tags = (e.topics || []).slice(0, 6).map(wikiTag).map((t) => `#${t}`).join(' ');
+    const conv = e.conversationLink ? ` · 对话：[[${e.conversationLink}]]` : '';
+    return `- [[${e.link}]] · ${e.oneLine || '（无核心句）'} · 主题：${tags || '#未分类'} · 来源：${e.source || e.type || '学习'} · ${e.created || ''}${conv}`;
+  });
+  return [
+    '---',
+    'type: learning-wiki-index',
+    'tags: [苏格拉底阅读器, 学习Wiki]',
+    '---',
+    '',
+    '# 🧠 学习 Wiki 索引',
+    '',
+    '> 由苏格拉底阅读器在“结束并归档”时自动维护。每行是一个已学知识条目；点击链接进入完整总结，AI 开新课时会检索这里作为已知基础。',
+    '',
+    '## 知识条目',
+    '',
+    ...lines,
+    '',
+  ].join('\n');
+}
+
+async function upsertWikiIndex(vault, subdir, input) {
+  const { dir, json, md } = wikiIndexFiles(vault, subdir);
+  await ensureDir(dir);
+  const data = await readWikiIndex(json);
+  data.entries = Array.isArray(data.entries) ? data.entries : [];
+  const summaryPath = String(input.summaryPath || '');
+  const id = safeName(input.id || (summaryPath ? path.basename(summaryPath, '.md') : input.title), '学习条目');
+  const old = data.entries.find((e) => e.id === id) || {};
+  const entry = {
+    ...old,
+    ...input,
+    id,
+    link: safeName(input.link || (summaryPath ? path.basename(summaryPath, '.md') : id), id),
+    oneLine: String(input.oneLine || old.oneLine || '').slice(0, 240),
+    topics: Array.isArray(input.topics) ? input.topics.filter(Boolean).slice(0, 8) : (old.topics || []),
+    created: old.created || input.created || new Date().toISOString().replace('T', ' ').slice(0, 16),
+    updated: new Date().toISOString().replace('T', ' ').slice(0, 16),
+  };
+  const idx = data.entries.findIndex((e) => e.id === id);
+  if (idx >= 0) data.entries[idx] = entry; else data.entries.push(entry);
+  data.entries = data.entries.slice(-2000);
+  await writeJsonFile(json, data);
+  await fsp.writeFile(md, renderWikiIndexMD(data.entries), 'utf8');
+  return entry;
 }
 
 /* ---------------- Zotero 联动（零依赖：storage 扫描 + node:sqlite 只读元数据） ---------------- */
@@ -348,15 +419,20 @@ const bookmapFile = (id) => path.join(DATA, 'bookmaps', `${id}.json`);
 function stripYFM(s) { return String(s || '').replace(/^---\n[\s\S]*?\n---\n?/, '').trim(); }
 const BUILTIN_SOCRATIC = `# 角色：苏格拉底式引导者
 通过连续、深入的提问，帮助用户澄清自身观点背后的概念、假设和逻辑。你绝不提供答案或直接评价，输出绝大部分应为问题。问题由浅入深：澄清概念 → 检验边界 → 探索假设 → 转换视角 → 推演后果 → 回溯本源。保持挑战性但有温度，一次只问一个问题。`;
-const BUILTIN_SUMMARIZE = `你是重点总结助手。基于提供的原文片段、用户批注与苏格拉底对话记录，输出简体中文 Markdown 总结，结构：
+const BUILTIN_SUMMARIZE = `你是学习知识库（LLM wiki）的条目撰写助手。基于提供的原文片段、用户批注与苏格拉底对话记录，输出一份可长期检索、可被未来学习引用的简体中文 Markdown 知识条目。结构：
 ## 一句话核心
-## 重点（要点式，引用原文关键词；大白话提炼本部分最精髓的一两点，不求面面俱到）
-## 精髓串联（本部分与已学部分之间的逻辑链：它承接/推翻/深化了什么，帮读者把知识串成链）
-## 对话中我理解到位的地方（具体到推理步骤）
+（一句可独立成立的话；未来检索到它就能判断这次学到了什么）
+## 知识条目
+（3-6 个小节，每节用 ### 概念/机制名 开头；内容包含：定义边界、机制或推理链、一个具体例子、失效条件。不要罗列原文，要沉淀成用户以后能直接调用的知识）
+## 知识串联
+（这些条目之间是什么关系；它们承接/推翻/深化了哪些已学内容）
+## 我理解到位的地方
+（具体到对话中的推理步骤）
 ## 薄弱点与遗留问题
 ## 值得制卡的要点（3-8 条，Q/A 形式）
-## 下一步（以一个让读者想继续读的悬念问题收尾）
-克制、具体，不要空话。`;
+## 下一步
+（以一个让读者想继续学的具体问题收尾）
+克制、具体、面向未来使用；避免“本部分讲了”这类一次性叙事。`;
 const BUILTIN_EXPLORE = `自由探索模式：用户想学习一个主题。你仍以苏格拉底式提问为主，但允许在用户卡住时给出**最小必要**的背景信息（每次不超过 80 字），然后继续用提问引导用户主动构建理解。先探底（用户已知什么），一次只问一个问题，逐步加深。`;
 
 const BUILTIN_WIT = `# WIT 精读法（Writing Is Thinking）——科研审读伙伴
@@ -741,13 +817,27 @@ async function handleApi(req, res, url) {
     const base = safeName(body.filename || body.title || '未命名', '未命名');
     const file = path.join(dir, `${base}.md`);
     await fsp.writeFile(file, String(body.content || ''), 'utf8');
-    return sendJSON(res, 200, { ok: true, path: file, obsidianUrl: `obsidian://open?path=${encodeURIComponent(file)}` });
+    return sendJSON(res, 200, { ok: true, path: file, rel: path.relative(vault, file), obsidianUrl: `obsidian://open?path=${encodeURIComponent(file)}` });
   }
   if (p === '/api/notes/search' && req.method === 'GET') {
     const vault = vaultAbs(cfg);
     if (!vault || !fs.existsSync(vault)) return sendJSON(res, 200, { hits: [], error: 'vault 未配置或不存在' });
-    const hits = await searchNotes(vault, q.get('q') || '', Number(q.get('limit') || 30));
+    const hits = await searchNotes(vault, q.get('q') || '', Number(q.get('limit') || 30), q.get('subdir') || '');
     return sendJSON(res, 200, { vault, hits });
+  }
+  if (p === '/api/wiki/upsert' && req.method === 'POST') {
+    const body = await readJSON(req);
+    const vault = vaultAbs(cfg);
+    if (!vault || !fs.existsSync(vault)) return sendJSON(res, 400, { error: `vault 目录不存在：${cfg.vaultPath}` });
+    const subdir = safeName(body.subdir || cfg.learning.wikiSubdir || '学习Wiki', '学习Wiki');
+    const entry = await upsertWikiIndex(vault, subdir, body.entry || {});
+    const { md } = wikiIndexFiles(vault, subdir);
+    return sendJSON(res, 200, {
+      ok: true,
+      entry,
+      index: md,
+      obsidianUrl: `obsidian://open?path=${encodeURIComponent(md)}`,
+    });
   }
 
   /* ---- 提示词 ---- */

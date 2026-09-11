@@ -35,6 +35,7 @@ node server.js        # 需要 Node ≥ 18（用到内置 fetch）
 - **📖 带你看书**：选中文字 → 💬 就这段向我提问；「🗺 拆书」AI 把整书切成知识节点（时长/风险评估），节点直接可作为带读范围
 - **🎧 苏格拉底带读**：AI 按块讲解（困境 → 方案 → 实例演算 → 缺陷现形），每块开头一行 `@p页码|开头→结尾` 标记驱动左侧 PDF 自动滚动 + 整块高亮（设置里可选 ✨闪现 / 📌常亮 / 🚫关闭）
 - **🧠 巩固**：复盘时 PDF 自动蒙毛玻璃（闭卷检索练习，聊天区「👁 偷看」随时掀开）；薄弱点跨书汇总成复习池
+- **🧠 学习 Wiki**：学习完成后点「✅ 结束并归档」，自动保存完整对话、生成可长期复用的知识总结，并更新 vault 内 `学习Wiki/Wiki索引.md`；之后带读 / 复盘 / WIT / 自由探索会先检索这个索引，把“你已学过什么”注入 AI 上下文
 - **🔬 WIT 精读**：像审稿人一样读论文——骨架 → Claim–Evidence 地图 → 六维拷问（Whether/What/Why/How/When/To what extent）→ 竞争解释 → 审稿人压力测试；Fact 与 Opinion 的"跳数"纪律贯穿全程（基于 [WIT: Writing Is Thinking](https://github.com/deltadbu/WIT-skill) 方法论精简改编）
 - **🔭 自由探索**：不带 PDF，从零纯提问式学一个主题
 
@@ -45,7 +46,7 @@ node server.js        # 需要 Node ≥ 18（用到内置 fetch）
 | `config.json` | 你的配置（**含 API Key，别外传**） |
 | `data/annotations/` | 每本书的高亮/笔记/薄弱点/已读部分 |
 | `data/bookmaps/` | AI 拆书结果缓存 |
-| Obsidian vault | 总结、巩固记录（按配置的路径） |
+| Obsidian vault | 总结、巩固记录、对话归档、`学习Wiki/Wiki索引.md`（按配置的路径） |
 
 全部本地文件，删目录即清空。
 

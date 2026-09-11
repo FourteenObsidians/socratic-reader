@@ -142,7 +142,7 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
       <div class="chat-empty">
         <div class="big">🏛</div>
         <p>我是您的苏格拉底式引导者。<br>我将仅通过提问来协助您思考——不提供答案，但会认真对待每一个想法。</p>
-        <p class="muted">阅读 PDF 时选中一段文字点 💬，或读完一个部分后点「✅ 完成此部分」；<br>也可以切到 🔭 自由探索，从零开始学一个主题。</p>
+        <p class="muted">阅读 PDF 时选中一段文字点 💬；学习结束后点「✅ 结束并归档」。<br>也可以切到 🔭 自由探索，从零开始学一个主题。</p>
       </div>
     </div>
     <div id="chatInputBar">
@@ -243,6 +243,7 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
     <div class="row">
       <label>卡片子目录 <input id="setCardsDir" placeholder="Cards"></label>
       <label>总结子目录 <input id="setSumDir" placeholder="阅读总结"></label>
+      <label>学习 Wiki 子目录 <input id="setWikiDir" placeholder="学习Wiki"></label>
     </div>
     <label>文件库根目录（每行一个，支持 C:\ 风格路径）
       <textarea id="setRoots" rows="3"></textarea>

@@ -116,24 +116,28 @@ SR.chat = {
         ['🫣 盲区检查', () => this.send('（指令）请进行盲区检查：回顾我们讨论过的所有内容，指出哪些重要的问题完全没有被提到，并用提问引导我思考这些盲区。')],
         ['🍳 通俗解释', () => this.send('（指令）我没读懂，请直接解释：用 300 字通俗介绍这部分内容，举一个做饭相关的例子，并解释核心概念。')],
         ['📝 生成重点总结', () => this.summarize('part')],
+        ['✅ 结束并归档', () => this.archiveLearning()],
       ],
       guide: [
         ['⏭ 进入下一块', () => this.send('（指令）这一块我已经明白了，请串联后进入下一块：先一句话连接上一块，再介绍新块并提出问题。')],
         ['🍳 这块没读懂', () => this.send('（指令）这块我没读懂，请直接解释：用大白话讲清当前块的精髓（可举一个生活化的例子），讲完立刻用一个验证问题确认我理解了。')],
         ['🧭 深挖', () => this.send('（指令）请就当前这块切换到深挖模式：从第一性原理、哲学基础、数学基础三个维度继续向我提问。')],
         ['📝 带读总结', () => this.summarize('part')],
+        ['✅ 结束并归档', () => this.archiveLearning()],
       ],
       review: [
         ['🩹 我不记得了', () => this.send('（指令）这块我想不起来了：请从材料中给我一个能推出答案的提示性小问题，帮我重新建构，不要直接给完整答案。')],
         ['📝 巩固记录', () => this.summarize('explore')],
+        ['✅ 结束并归档', () => this.archiveLearning()],
       ],
       explore: [
         ['🔄 换个角度', () => this.send('（指令）请换一个完全不同的角度（学科视角 / 时间尺度 / 抽象层级）继续向我提问。')],
         ['💡 给我一点背景', () => this.send('（指令）我卡住了，请给出一段不超过 80 字的最小必要背景，然后继续用一个新问题引导我。')],
         ['📝 总结收获并保存', () => this.summarize('explore')],
+        ['✅ 结束并归档', () => this.archiveLearning()],
       ],
       sel: [
-        ['✅ 结束这段讨论', () => { SR.state.session.mode = 'done'; this.renderChips('done'); SR.toast('已结束，可继续阅读或开启新对话'); }],
+        ['✅ 结束并归档', () => this.archiveLearning()],
       ],
       wit: [
         ['🗺 Claim–Evidence 地图', () => this.send('（指令）跳到 Claim–Evidence 地图阶段：抽取本部分 2–4 个 major claims，表格呈现每个的支撑证据、证据强度与剩余不确定性，然后挑最薄弱的一个问我。')],
@@ -142,6 +146,7 @@ SR.chat = {
         ['🕵️ 审稿人压力测试', () => this.send('（指令）跳到审稿人压力测试：列 Top-3 挑战并分类（能补实验/已有数据能分析/只能写 limitation/致命伤）。')],
         ['🏁 收束', () => this.send('（指令）收束：给最小完整故事——Central Question / Central Claim / 2–3 个 Key Findings / 最脆弱的一环 / 值得追问的下一个问题。')],
         ['📝 WIT 纪要', () => this.summarize('part')],
+        ['✅ 结束并归档', () => this.archiveLearning()],
       ],
       done: [],
     };
@@ -261,7 +266,7 @@ SR.chat = {
     return t;
   },
 
-  async exportChat() {
+  async exportChat(opts = {}) {
     const s = SR.state.session;
     if (!s || !s.messages || !s.messages.length) { SR.toast('当前没有可导出的对话'); return; }
     const now = new Date().toISOString().replace('T', ' ').slice(0, 16);
@@ -278,11 +283,14 @@ SR.chat = {
       const who = m.role === 'user' ? '**我**' : '**引导者**';
       return `### ${who}\n\n${this._squeezeMsg(m)}\n`;
     }).join('\n');
-    const filename = `${(ctx.title || '对话').slice(0, 30)}-对话记录`;
+    const stamp = now.replace(/[:]/g, '').replace(' ', '-');
+    const filename = `${(ctx.title || ctx.topic || '对话').slice(0, 30)}-对话记录-${stamp}`;
     try {
       const r = await SR.apiPost('/api/notes/save', { filename, content: head + body, subdir: '对话记录' });
-      SR.toast('📤 已导出 ✅ ' + r.path, 'success', 6000);
+      if (!opts.silent) SR.toast('📤 已导出 ✅ ' + r.path, 'success', 6000);
+      return r;
     } catch (e) { SR.toast('导出失败：' + e.message, 'error'); }
+    return null;
   },
 
   appendStreamBubble() {
@@ -478,6 +486,7 @@ SR.chat = {
     const bubble = this.appendStreamBubble();
     /* 最后一条 user 消息若有挂起的图片版内容 → 用 multimodal（仅本轮发送，会话里仍存占位文本） */
     const lastUser = [...s.messages].reverse().find((m) => m.role === 'user');
+    const lastUserText = lastUser && typeof lastUser.content === 'string' ? lastUser.content : '';
     const useImages = this._pendingImages && lastUser && s.messages[s.messages.length - 1] === lastUser;
     if (useImages) {
       s._mmIndex = s.messages.length - 1;                       // 记住被替换的位置，收尾时换回占位文本
@@ -489,8 +498,11 @@ SR.chat = {
     const langDirective = lang === 'en'
       ? '【OUTPUT LANGUAGE】Always respond in English, regardless of the language of the reading material, figures, or the user. Keep technical terms as-is; original text quotations stay in their source language.'
       : '【输出语言】无论阅读材料、图表或用户使用什么语言，你必须全程用简体中文作答；专业术语、代码、图表标签可在括号里保留英文原文，引用原文时保留原文。';
+    const memorySystem = (s.messages.length > 2 && lastUserText && !lastUserText.startsWith('【材料】'))
+      ? await this.learningMemory(lastUserText)
+      : '';
     const msgs = [
-      { role: 'system', content: [s.system, extraSystem, langDirective].filter(Boolean).join('\n\n') },
+      { role: 'system', content: [s.system, extraSystem, memorySystem, langDirective].filter(Boolean).join('\n\n') },
       ...s.messages,
     ];
     try {
@@ -622,6 +634,7 @@ SR.chat = {
     SR.toast('正在提取材料…');
     const mat = await SR.reader.getPartMaterial(part);
     if (!mat.text) { SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
+    const memory = await this.learningMemory(`${d.title} ${part.title}`);
     const system = [
       SR.state.prompts.wit,
       '\n## 输出格式（硬性要求，放在一切之前）',
@@ -632,6 +645,7 @@ SR.chat = {
       '示例：@p25|Embeddings are the foundation→become geometric ones',
       '标记行之后另起一行再开始分析。没有这一行界面无法定位 PDF。',
       `\n## 当前任务：WIT 精读《${d.title}》第 ${part.from}–${part.to} 页（部分：${part.title}）`,
+      memory,
       '按五阶段推进：骨架 → Claim–Evidence 地图 → 六维拷问 → 竞争解释 → 压力测试。',
       '第一轮：先输出位置标记（标整个分析范围）→ 一段话骨架（Central Question / Central Claim / storyline）→ 从材料里挑最值得攻击的一个 claim，抛出第一个拷问问题（六维里挑最能动摇它的那一维）。',
       '用户答完 → 给分析（对错直说、证据锚定数字）→ 推进到下一个 claim 或下一阶段（新一轮记得输出新的位置标记）。',
@@ -659,6 +673,7 @@ SR.chat = {
     const mat = await SR.reader.getPartMaterial(part);
     if (!mat.text) { SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
     const P = SR.state.prompts;
+    const memory = await this.learningMemory(`${d.title} ${part.title}`);
     const system = [
       P.socratic,
       this.personaLayer(),
@@ -672,6 +687,7 @@ SR.chat = {
       '没有这一行，用户界面无法定位 PDF，这次教学就断了。标记行之后另起一行，再开始介绍与提问。',
       '\n## 当前任务：苏格拉底带读（用户首次接触这部分材料）',
       `用户正在读《${d.title}》的第 ${part.from}–${part.to} 页（部分：${part.title}），这是第一遍——你带着他穿过材料。`,
+      memory,
       '## 带读引擎（按顺序执行）',
       '1. **叙事立场（最重要的规则）**：主线永远是「**困境 → 第一代方案 → 当场演算 → 缺陷在例子里现形 → 用户指出它 → 下一代方案冲着它去**」的问题链，不是“教材讲了什么”的导读链。【严禁】用“作者接下来讲/这一节介绍/教材此处讨论/书的写法是”做推进语。教材只在确需逐字佐证时引用一次（见下方元叙述限额），不做例行出处挂靠。每个概念入场前，用户必须先感到“旧办法的痛”，再看到新办法——让他有自己站在历史节点上设计方案的感觉。你是陪他解题的大师，不是领他参观的导游：每一步都让他先走半步。',
       '2. **对话节奏（大师感的来源，违反即退化为练习册）**：一轮回复 = 一个概念单元的讲解 + **恰好一个问题**，问完即停。一个块讲不完就分成多轮，下一轮从他的回答接着走。【严禁】一轮打包多个概念单元、【严禁】一次抛两个问题、【严禁】给问题贴“热身/主问题/练习/思考题”标签——问题就像随口问出来的，不带编号不带栏目。',
@@ -743,11 +759,13 @@ SR.chat = {
     const mat = await SR.reader.getPartMaterial(part);
     if (!mat.text) { SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
     const P = SR.state.prompts;
+    const memory = await this.learningMemory(`${d.title} ${part.title}`);
     const system = [
       P.socratic,
       this.personaLayer(),
       '\n## 当前任务：文献陪读复盘（文献阅读模式）',
       `用户刚读完《${d.title}》的第 ${part.from}–${part.to} 页（部分：${part.title}），主动发起复盘。`,
+      memory,
       '## 追问链路（认知科学：主动提取 + 费力加工）',
       '每一轮只推进一步，踩在“用户知道但还没想清楚”的位置：',
       '① 确认模糊概念（让用户用自己的话说这部分在讲什么）→ ② 挑战边界（“如果推到极限，这个说法在哪里破裂？”）→ ③ 要求具体化（举一个材料中的具体例子）→ ④ 反例施压（假设条件变化/被遮挡/被替换，结论还成立吗）→ ⑤ 引导重建（让用户自己重新表述出更精确的理解）。',
@@ -783,15 +801,20 @@ SR.chat = {
   },
 
   /* ---------- 场景二：选段提问 ---------- */
-  askAboutSelection({ text, page, title }) {
+  async askAboutSelection({ text, page, title }) {
     const P = SR.state.prompts;
+    const memory = await this.learningMemory(`${title} ${text.slice(0, 80)}`);
     const system = [
       P.socratic,
       this.personaLayer(),
       '\n## 当前任务：选段研读',
       `用户在《${title}》第 ${page} 页选中了一段文字。请就这一段向用户提问：先澄清这段在讲什么（让用户用自己的话解释），再深入关键概念、假设与后果。一次只问一个问题，绝不直接讲解，除非用户明确说“没读懂/请解释”。`,
+      memory,
     ].join('\n');
-    this.newSession('sel', `💬 选段研读 · p.${page}`, { brief: `💬 《${SR.esc(title)}》p.${page} 选段`, file: SR.state.doc.path, page, title }, system);
+    this.newSession('sel', `💬 选段研读 · p.${page}`, {
+      brief: `💬 《${SR.esc(title)}》p.${page} 选段`, file: SR.state.doc.path, page, title,
+      topic: `${title} p.${page} 选段`,
+    }, system);
     this.send(`我选中了这段（p.${page}）：\n\n「${text}」\n\n请就此向我提问。`);
   },
 
@@ -812,6 +835,7 @@ SR.chat = {
       } catch { /* 忽略 */ }
     } else document.getElementById('exploreHits').classList.add('hidden');
     const P = SR.state.prompts;
+    const wikiBlock = await this.learningMemory(topic);
     const system = [
       P.socratic,
       this.personaLayer(),
@@ -820,6 +844,7 @@ SR.chat = {
       `\n主题：${topic}\n用户自评水平：${level}`,
       '\n问题要具体、可判定：把主题拆成细粒度子问题逐个推进（从概念的定义边界、一个具体例子、一个数值量级或一个反例入手），避免“你怎么理解X”“X是什么”式的空泛问法。',
       notesBlock,
+      wikiBlock,
       '\n现在开始：先用一个问题探底用户对该主题的已知程度，再根据回答决定推进节奏。',
     ].join('\n');
     this.newSession('explore', `🔭 ${topic}`, { brief: `🔭 主题：${SR.esc(topic)} · 水平：${level}`, topic, level }, system);
@@ -836,17 +861,75 @@ SR.chat = {
     }
   },
 
-  /* ---------- 重点总结 ---------- */
-  async summarize(kind) {
+  /* 学习 Wiki 检索：开新课时把“用户已经知道什么”注入系统上下文。
+     只检索索引文件，避免把历史对话全文塞进模型。 */
+  async learningMemory(query) {
+    const cfg = SR.state.config || {};
+    if (!cfg.vaultPath) return '';
+    const q = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!q) return '';
+    try {
+      const subdir = (cfg.learning && cfg.learning.wikiSubdir) || '学习Wiki';
+      const r = await SR.api('/api/notes/search?q=' + encodeURIComponent(q) + '&limit=6&subdir=' + encodeURIComponent(subdir));
+      const hits = (r.hits || []).filter((h) => /\.md$/i.test(h.file || h.rel || ''));
+      if (!hits.length) return '';
+      return [
+        '\n## 用户已学知识（来自学习 Wiki 索引检索）',
+        '以下是用户以前学过并归档的知识线索，代表已知基础而非当前材料事实。利用它们承接、对比或检验；不确定相关时不要硬套。',
+        ...hits.map((h) => `- ${h.snippet}`),
+      ].join('\n');
+    } catch { return ''; }
+  },
+
+  summaryKindOf(s) {
+    if (s.mode === 'guide' || s.mode === 'wit' || s.mode === 'part') return 'part';
+    if (s.mode === 'review') return 'review';
+    return 'explore';
+  },
+
+  async archiveLearning() {
     const s = SR.state.session;
-    if (!s || !s.messages.length) { SR.toast('还没有对话内容'); return; }
+    if (!s || !s.messages || s.messages.length < 2 || this.busy) { SR.toast('还没有可归档的学习对话'); return; }
+    if (s.mode === 'done') { SR.toast('这段学习已经归档过'); return; }
+    SR.toast('正在归档：生成总结、保存对话、更新学习 Wiki…', 'info', 5000);
+    const ok = await this.summarize(this.summaryKindOf(s), { autoSave: true });
+    if (!ok) return;
+    const conv = await this.exportChat({ silent: true });
+    if (!conv) {
+      SR.toast('归档未完成：总结已保存，但对话导出失败；当前学习会话仍保留', 'error', 6000);
+      return;
+    }
+    if (conv && this._sumMeta && this._sumMeta.entryId) {
+      const cfg = SR.state.config || {};
+      try {
+        await SR.apiPost('/api/wiki/upsert', {
+          subdir: (cfg.learning && cfg.learning.wikiSubdir) || '学习Wiki',
+          entry: {
+            id: this._sumMeta.entryId,
+            conversationPath: conv.path,
+            conversationLink: String(conv.rel || '').split(/[\\/]/).pop().replace(/\.md$/i, ''),
+          },
+        });
+      } catch (e) { SR.toast('对话已保存，但 Wiki 索引补链接失败：' + e.message, 'error', 5000); }
+    }
+    s.mode = 'done';
+    s.archivedAt = Date.now();
+    this.renderChips('done');
+    SR.persist.save();
+    SR.toast('📚 学习已归档：总结 + 对话已进 Obsidian，Wiki 索引已更新', 'success', 6000);
+  },
+
+  /* ---------- 重点总结 ---------- */
+  async summarize(kind, opts = {}) {
+    const s = SR.state.session;
+    if (!s || !s.messages.length) { SR.toast('还没有对话内容'); return false; }
     const P = SR.state.prompts;
     const dlg = document.getElementById('dlgSummary');
     const ta = document.getElementById('sumContent');
     const target = document.getElementById('sumTarget');
     ta.value = '生成中…';
     document.getElementById('sumOpen').classList.add('hidden');
-    const isPart = kind === 'part' && (s.mode === 'part' || s.mode === 'guide') && s.context && s.context.text;
+    const isPart = kind === 'part' && (s.mode === 'part' || s.mode === 'guide' || s.mode === 'wit') && s.context && s.context.text;
     const isReview = s.mode === 'review';
     document.getElementById('sumTitle').textContent = isPart ? (s.mode === 'guide' ? '🎧 带读总结' : s.mode === 'wit' ? '🔬 WIT 精读纪要' : '📝 重点总结 · 部分复盘') : (isReview ? '🧠 巩固记录' : '📝 探索纪要');
     let userMsg = '';
@@ -861,12 +944,20 @@ SR.chat = {
     } else if (s.context && s.context.topic) {
       userMsg = `【探索主题】${s.context.topic}（水平：${s.context.level}）\n\n`;
     }
-    userMsg += '【对话记录】\n' + s.messages.map((m) => `${m.role === 'user' ? '我' : '引导者'}：${m.content}`).join('\n\n');
+    userMsg += '【对话记录】\n' + s.messages.map((m) => {
+      const text = typeof m.content === 'string' ? m.content : '（材料附图，本轮已由视觉模型读取）';
+      return `${m.role === 'user' ? '我' : '引导者'}：${text}`;
+    }).join('\n\n');
+    const saveBtn = document.getElementById('sumSave');
+    if (opts.autoSave) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = '自动保存中…';
+    }
     dlg.showModal();
     this.abort = new AbortController();
     try {
       const acc = await SR.chatStream([
-        { role: 'system', content: P.summarize },
+        { role: 'system', content: [P.summarize, '\n这份总结会进入用户的 Obsidian 学习 Wiki，并被未来 AI 学习会话检索。请写成可长期复用的知识条目，不要写成一次性课程纪要。'].join('\n') },
         { role: 'user', content: userMsg },
       ], {
         signal: this.abort.signal,
@@ -878,14 +969,52 @@ SR.chat = {
          弱点复习会话不提取（避免刚移除又加回）；部分回顾会话照常提取 */
       const extractOk = !isReview || (s.context && s.context.reviewKind === 'part');
       this._sumMeta.weak = extractOk ? await this.extractWeak(s, isPart).catch(() => []) : [];
+      this._sumMeta.wiki = await this.extractWikiMeta(acc, s).catch(() => ({}));
       target.textContent = isPart
         ? `将保存到 vault：${SR.state.config.cards.summariesSubdir || '阅读总结'}/${s.context.title}-p${s.context.from}-${s.context.to}-总结.md`
         : isReview
           ? `将保存到 vault：巩固复习/${(s.context.reviewKind === 'weak' ? s.context.weak.text : s.context.part.title).slice(0, 30)}-巩固记录.md`
           : `将保存到 vault：自由探索/${(s.context.topic || '主题').slice(0, 30)}-探索纪要.md`;
+      if (opts.autoSave) {
+        const saved = await this.saveSummary({ silent: true });
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存到 vault';
+        if (saved) {
+          dlg.close();
+          return true;
+        }
+        return false;
+      }
+      return true;
     } catch (e) {
       ta.value = '生成失败：' + e.message;
+      if (opts.autoSave) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存到 vault';
+      }
+      return false;
     } finally { this.abort = null; }
+  },
+
+  async extractWikiMeta(summary, s) {
+    const c = s.context || {};
+    const source = c.title || c.bookTitle || c.topic || s.title || '自由学习';
+    const acc = await SR.chatStream([
+      { role: 'system', content: '你是学习 Wiki 索引助手。从总结中提取一个 JSON 对象，字段：title（不超过 24 字）、oneLine（一句话核心，不超过 90 字）、topics（3-6 个具体主题词，不要空泛词）、source（来源书名/主题）。只输出 JSON，不要 Markdown 代码块。' },
+      { role: 'user', content: `【来源】${source}\n【总结】\n${String(summary || '').slice(0, 12000)}\n\n请输出 JSON 对象。` },
+    ], { signal: (this.abort && this.abort.signal) || undefined });
+    let obj = null;
+    try { obj = JSON.parse(acc.replace(/^```(json)?|```$/g, '').trim()); } catch { /* ignore */ }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) obj = {};
+    const fallbackOneLine = (/##\s*一句话核心\s*\n+([^\n]+)/.exec(String(summary || '')) || [])[1] || '';
+    return {
+      title: String(obj.title || source).slice(0, 80),
+      oneLine: String(obj.oneLine || fallbackOneLine || `用户完成了 ${source} 的学习`).slice(0, 240),
+      topics: Array.isArray(obj.topics) && obj.topics.length
+        ? obj.topics.filter((x) => typeof x === 'string' && x.trim()).slice(0, 8)
+        : [source],
+      source: String(obj.source || source).slice(0, 120),
+    };
   },
 
   /* 从对话记录提取用户曾卡住的知识点（2-4 条），供未来会话温故式追问 */
@@ -909,10 +1038,20 @@ SR.chat = {
     return arr.filter((x) => typeof x === 'string' && x.trim()).slice(0, 4).map((x) => x.trim());
   },
 
-  async saveSummary() {
+  _wikiFrontmatter() {
+    const w = (this._sumMeta && this._sumMeta.wiki) || {};
+    const topics = Array.isArray(w.topics) && w.topics.length ? w.topics : ['未分类'];
+    const oneLine = String(w.oneLine || '').replace(/\s+/g, ' ').trim();
+    return [
+      oneLine ? `one_line: ${JSON.stringify(oneLine)}` : '',
+      `topics: ${JSON.stringify(topics.slice(0, 8))}`,
+    ].filter(Boolean).join('\n') + '\n';
+  },
+
+  async saveSummary(opts = {}) {
     const s = SR.state.session;
     const ta = document.getElementById('sumContent');
-    if (!ta.value.trim() || ta.value.startsWith('生成')) { SR.toast('内容为空或未生成完'); return; }
+    if (!ta.value.trim() || ta.value.startsWith('生成')) { SR.toast('内容为空或未生成完'); return false; }
     const now = new Date().toISOString().replace('T', ' ').slice(0, 16);
     let filename, content;
     if (this._sumMeta && this._sumMeta.kind === 'part' && s.context && s.context.text) {
@@ -934,12 +1073,28 @@ SR.chat = {
       content = `---\ncreated: ${now}\ntype: 探索纪要\ntopic: ${topic}\ntags: [苏格拉底阅读器, 自由探索]\n---\n\n# 🔭 ${topic} · 探索纪要\n\n> 水平：${(s.context && s.context.level) || '-'} · 生成于 ${now}\n\n${ta.value}\n`;
     }
     const sumKind = this._sumMeta && this._sumMeta.kind;
+    content = content.replace(/^---\n/, `---\n${this._wikiFrontmatter()}`);
     try {
       const r = await SR.apiPost('/api/notes/save', {
         filename, content,
         subdir: sumKind === 'part' ? (SR.state.config.cards.summariesSubdir || '阅读总结') : (sumKind === 'review' ? '巩固复习' : '自由探索'),
       });
-      SR.toast('已保存 ✅ ' + r.path, 'success', 5000);
+      const cfg = SR.state.config || {};
+      if ((this._sumMeta.wiki || {}).oneLine || ((this._sumMeta.wiki || {}).topics || []).length) {
+        try {
+          const wr = await SR.apiPost('/api/wiki/upsert', {
+            subdir: (cfg.learning && cfg.learning.wikiSubdir) || '学习Wiki',
+            entry: {
+              ...this._sumMeta.wiki,
+              type: sumKind === 'part' ? '阅读总结' : (sumKind === 'review' ? '巩固复习' : '自由探索'),
+              created: now,
+              summaryPath: r.path,
+            },
+          });
+          this._sumMeta.entryId = wr.entry.id;
+        } catch (e) { SR.toast('总结已保存，但 Wiki 索引更新失败：' + e.message, 'error', 5000); }
+      }
+      if (!opts.silent) SR.toast('已保存 ✅ ' + r.path, 'success', 5000);
       this.setPdfMask(false);           // 复盘结束，掀开 PDF 回到阅读
       /* 待巩固点入库（温故式追问的记忆）：合并去重，上限 12 条。
          目标书可能不在阅读器中打开（巩固会话）→ 走服务端写入 */
@@ -947,7 +1102,7 @@ SR.chat = {
         const targetPath = (s.context && (s.context.bookPath || s.context.file)) || '';
         const src = (this._sumMeta.kind === 'part' && s.context && s.context.partTitle)
           ? `${s.context.partTitle}（p.${s.context.from}–${s.context.to}）`
-          : (isReview ? '巩固复盘' : '自由探索');
+          : (sumKind === 'review' ? '巩固复盘' : '自由探索');
         const d = SR.state.doc;
         if (d && targetPath && d.path === targetPath) {
           d.weakPoints = Array.isArray(d.weakPoints) ? d.weakPoints : [];
@@ -991,7 +1146,7 @@ SR.chat = {
       a.href = r.obsidianUrl;
       a.classList.remove('hidden');
       // 陪读打卡：复盘/带读完成 → 标记该部分，并提示下一个目标
-      if (this._sumMeta && this._sumMeta.kind === 'part' && (s.mode === 'part' || s.mode === 'guide') && s.context && s.context.partId) {
+      if (this._sumMeta && this._sumMeta.kind === 'part' && (s.mode === 'part' || s.mode === 'guide' || s.mode === 'wit') && s.context && s.context.partId) {
         SR.reader.markPartDone(s.context.partId);
         if (SR.reader.readalong.on) {
           const next = await SR.reader.nextPartAfter({ id: s.context.partId });
@@ -1006,8 +1161,10 @@ SR.chat = {
           }
         }
       }
+      return true;
     } catch (e) {
       SR.toast('保存失败：' + e.message, 'error', 5000);
+      return false;
     }
   },
 
@@ -1037,7 +1194,8 @@ SR.chat = {
       const [a, b] = m[0].split(/\s*[-–—]\s*/).map(Number);
       material = await SR.reader.extractPages(book.path, a, b);
     }
-    const system = this.reviewSystem(`本次复习的知识点：「${weak.text}」（来源：《${book.title}》 ${weak.src || ''}）`);
+    const memory = await this.learningMemory(`${book.title} ${weak.text}`);
+    const system = this.reviewSystem(`本次复习的知识点：「${weak.text}」（来源：《${book.title}》 ${weak.src || ''}）\n${memory}`);
     this.newSession('review', `🧠 巩固 · ${weak.text.slice(0, 18)}`, {
       brief: `🧠 ${SR.esc(weak.text.slice(0, 40))}`, reviewKind: 'weak',
       weak, bookPath: book.path, bookTitle: book.title, material,
@@ -1048,7 +1206,8 @@ SR.chat = {
   async startPartReReview(book, part) {
     SR.toast('正在提取该部分文本…');
     const material = await SR.reader.extractPages(book.path, part.from, part.to);
-    const system = this.reviewSystem(`本次回顾的部分：《${book.title}》 ${part.title}（第 ${part.from}–${part.to} 页，用户已完成过一次复盘）`);
+    const memory = await this.learningMemory(`${book.title} ${part.title}`);
+    const system = this.reviewSystem(`本次回顾的部分：《${book.title}》 ${part.title}（第 ${part.from}–${part.to} 页，用户已完成过一次复盘）\n${memory}`);
     this.newSession('review', `🧠 回顾 · ${part.title.slice(0, 18)}`, {
       brief: `🧠 ${SR.esc(book.title)} · ${SR.esc(part.title)}`, reviewKind: 'part',
       part, bookPath: book.path, bookTitle: book.title, material,
