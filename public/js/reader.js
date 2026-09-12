@@ -12,6 +12,8 @@ SR.reader = {
 
   /* ===== 打开文档 ===== */
   async open(absPath) {
+    if (/\.epub$/i.test(absPath)) return this.openEpub(absPath);   // EPUB 分流：章节即"页"，功能同构
+    if (this.doc && this.doc.kind === 'epub') this.teardownEpub();  // 从 EPUB 切回 PDF：销毁 rendition/键盘监听
     if (!window.pdfjsLib) {
       SR.toast('PDF.js 未加载成功：请检查网络，或运行 node tools/get-vendor.js 后刷新', 'error', 5000);
       return;
@@ -73,6 +75,7 @@ SR.reader = {
 
   /* ===== 圈图提问：工具栏按钮切换模式，拖矩形 → 截图+周文 → 发给视觉模型 ===== */
   toggleBoxSelect(on) {
+    if (this.doc && this.doc.kind === 'epub') { SR.toast('圈图提问仅支持 PDF（EPUB 无固定版面）', 'info', 2600); return; }
     this._boxSel = on === undefined ? !this._boxSel : !!on;
     const btn = document.getElementById('btnBoxAsk');
     if (btn) {
@@ -293,6 +296,12 @@ SR.reader = {
   },
 
   scrollToPage(n, behavior = 'smooth') {
+    const d = this.doc;
+    if (d && d.kind === 'epub') {                       // EPUB：n=章号（1-based）→ display spine 索引
+      if (d.rendition) d.rendition.display(Math.max(0, Math.min(d.pages - 1, Math.round(n) - 1)));
+      this.setPageIndicator(Math.min(d.pages, Math.max(1, Math.round(n) || 1)));
+      return;
+    }
     const el = this.scroll.querySelector(`.page[data-page="${n}"]`);
     if (!el) return;
     this.scroll.scrollTo({ top: el.offsetTop - 10, behavior });
@@ -306,6 +315,7 @@ SR.reader = {
   focusPages(from, to, quote, endQuote) {
     const d = this.doc;
     if (!d || !this.scroll) return;
+    if (d.kind === 'epub') return this._epubFocus(from, to, quote, endQuote);
     const f = Math.max(1, Math.round(Number(from)) || 1);
     const t = Math.min(d.pages, Math.max(f, Math.round(Number(to)) || f));
     this._clearFocus();
@@ -335,9 +345,97 @@ SR.reader = {
     }
   },
 
+  /* EPUB 带读聚焦：跳到目标章 → 在章内 DOM 搜短语 → Range→CFI 常亮高亮；未命中只跳章 */
+  async _epubFocus(from, to, quote, endQuote) {    const d = this.doc;
+    const f = Math.max(1, Math.round(Number(from)) || 1);
+    this._clearFocus();
+    const mode = (SR.state.config && SR.state.config.focusMode) || 'flash';
+    if (f - 1 !== (d.readPos || 1) - 1) { try { await d.rendition.display(f - 1); } catch { /* 跳章失败 */ } }
+    if (mode === 'off' || !quote) { console.log('[SR带读·epub] 仅跳章 p.' + f); return; }
+    /* 等 relocated 渲染稳定后搜短语 */
+    let tries = 0;
+    const attempt = () => {
+      tries++;
+      const cfi = this._epubFindPhrase(quote, endQuote);
+      if (cfi) {
+        try {
+          this._epubFocusCfi = cfi;
+          d.rendition.annotations.add('highlight', cfi, {}, () => {}, 'sr-epub-focus', { fill: 'rgba(255,193,7,.55)' });
+          if (mode === 'flash') this._focusTimer = setTimeout(() => this._clearFocus(), 8000);
+          console.log(`[SR带读·epub] 短语命中（第${tries}次尝试）✓`);
+        } catch { /* cfi 失效 */ }
+        return;
+      }
+      if (tries < 8) this._focusRetry = setTimeout(attempt, 500);
+      else console.log('[SR带读·epub] 短语未命中，仅停在目标章');
+    };
+    setTimeout(attempt, 300);
+  },
+
+  _epubFindPhrase(quote, endQuote) {
+    const d = this.doc;
+    const contents = d.rendition && d.rendition.getContents()[0];
+    const doc = contents && contents.document;
+    if (!doc || !doc.body) return null;
+    const strip = (s) => String(s || '').replace(/[\s\u00AD]+|[-‐‑‒–—]/g, '');
+    const q = strip(quote); const qe = endQuote ? strip(endQuote) : '';
+    if (q.length < 4) return null;
+    const walker = doc.createTreeWalker(doc.body, 4 /* SHOW_TEXT */);
+    const nodes = []; let S = ''; const map = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const tx = strip(n.nodeValue);
+      if (!tx) continue;
+      for (let k = 0; k < tx.length; k++) map[S.length + k] = nodes.length;
+      nodes.push(n); S += tx;
+    }
+    const probe = (s) => {
+      for (const sub of [s, s.slice(0, 24), s.slice(0, 12), s.slice(-12)]) {
+        if (sub.length < 4) continue;
+        const i = S.indexOf(sub);
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+    const si = probe(q); if (si < 0) return null;
+    let se = si + q.length - 1;
+    if (qe) { const j = S.indexOf(qe, si); if (j >= 0) se = j + qe.length - 1; }
+    const n0 = nodes[map[si]], n1 = nodes[map[se]] || nodes[nodes.length - 1];
+    if (!n0 || !n1) return null;
+    /* map 是"去空白后字符→节点序"：反推节点内 offset 需重扫该节点 */
+    const offIn = (node, globalIdx, dir) => {
+      let acc = 0;
+      for (let k = 0; k < nodes.length; k++) {
+        const L = strip(nodes[k].nodeValue).length;
+        if (nodes[k] === node) {
+          const local = dir > 0 ? Math.max(0, globalIdx - acc) : Math.min(L, globalIdx - acc + 1);
+          /* local 是去空白坐标：回到原节点字符坐标 */
+          let raw = 0, cnt = 0;
+          const raws = node.nodeValue || '';
+          for (let r = 0; r < raws.length; r++) {
+            const st = strip(raws[r]);
+            if (!st) continue;
+            if (cnt >= local && dir > 0) return Math.max(0, r);
+            if (cnt >= local) return Math.min(raws.length, r + 1);
+            cnt++;
+          }
+          return raws.length;
+        }
+        acc += L;
+      }
+      return 0;
+    };
+    try {
+      const rng = doc.createRange();
+      rng.setStart(n0, Math.min(offIn(n0, si, 1), n0.length));
+      rng.setEnd(n1, Math.min(Math.max(offIn(n1, se, -1), 1), n1.length));
+      const CFI = window.ePub && window.ePub.CFI;
+      const cfiStr = CFI ? new CFI(rng, contents.cfiBase).toString() : null;
+      return cfiStr;
+    } catch { return null; }
+  },
+
   _pageGlow(f, t, mode) {
-    let hit = 0;
-    for (let p = f; p <= Math.min(t, f + 2); p++) {
+    let hit = 0;    for (let p = f; p <= Math.min(t, f + 2); p++) {
       const el = this.scroll.querySelector(`.page[data-page="${p}"]`);
       if (el) { el.classList.add('page-focus'); hit++; }
     }
@@ -486,6 +584,13 @@ SR.reader = {
     if (this._focusTimer) { clearTimeout(this._focusTimer); this._focusTimer = 0; }
     if (this._focusRetry) { clearTimeout(this._focusRetry); this._focusRetry = 0; }
     if (this._focusFadeTimer) { clearTimeout(this._focusFadeTimer); this._focusFadeTimer = 0; }
+    /* EPUB：移除带读聚焦 annotation（epub.js 里没有 DOM 层可扫） */
+    const d = this.doc;
+    if (d && d.kind === 'epub' && d.rendition && this._epubFocusCfi) {
+      try { d.rendition.annotations.remove(this._epubFocusCfi, 'highlight'); } catch { /* 已移除 */ }
+      this._epubFocusCfi = null;
+      return;
+    }
     /* 淡出 .5s 后再移除节点；期间来了新聚焦会再次进本函数，节点被立即移除，不叠影 */
     const layers = [...this.scroll.querySelectorAll('.focusLayer')];
     const glows = [...this.scroll.querySelectorAll('.page-focus')];
@@ -500,6 +605,7 @@ SR.reader = {
 
   setZoom(z, absolute = false) {
     const d = this.doc; if (!d) return;
+    if (d.kind === 'epub') { SR.toast('EPUB 为流式排版，暂不支持缩放', 'info', 2200); return; }
     d.zoom = Math.min(4, Math.max(0.4, absolute ? z : d.zoom * z));
     this.buildView();
   },
@@ -604,6 +710,7 @@ SR.reader = {
 
   renderHls(pageNo) {
     const d = this.doc;
+    if (d.kind === 'epub') return;                     // EPUB：annotations 由 epub.js 按 CFI 自动应用/重画
     const layer = this.scroll.querySelector(`.page[data-page="${pageNo}"] .hlLayer`);
     if (!layer) return;
     layer.innerHTML = '';
@@ -626,6 +733,22 @@ SR.reader = {
 
   addHighlight(pagesOrRects, text, page, color, note = '') {
     const d = this.doc;
+    /* EPUB：CFI 高亮（_sel 里带 cfi 与整段文本） */
+    if (d.kind === 'epub') {
+      const sel = this._sel;
+      if (!sel || !sel.cfi) return null;
+      const ann = {
+        id: (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)),
+        type: note ? 'note' : 'hl', page: page || d.readPos || 1, color,
+        cfi: sel.cfi, text: sel.text || text, note, created: Date.now(), epub: 1,
+      };
+      d.ann.push(ann);
+      this._epubApplyHl(ann);
+      try { d.rendition && d.rendition.clearSelection(); } catch { /* 无选区 */ }
+      this.renderAnnotsList();
+      this.saveAnnDebounced();
+      return ann;
+    }
     // 新格式：[{page,rects,text}]；旧格式：rects + page
     const groups = Array.isArray(pagesOrRects) && pagesOrRects[0] && pagesOrRects[0].rects
       ? pagesOrRects
@@ -666,6 +789,13 @@ SR.reader = {
 
   removeAnn(ann) {
     const d = this.doc;
+    if (d.kind === 'epub') {
+      d.ann = d.ann.filter((a) => a.id !== ann.id);
+      try { if (ann.cfi && d.rendition) d.rendition.annotations.remove(ann.cfi, 'highlight'); } catch { /* cfi 失效 */ }
+      this.renderAnnotsList();
+      this.saveAnnDebounced();
+      return;
+    }
     d.ann = d.ann.filter((a) => a.id !== ann.id);
     this.renderHls(ann.page);
     this.renderAnnotsList();
@@ -1282,8 +1412,158 @@ SR.reader = {
     } catch { return null; }
   },
 
+  /* ===== EPUB 支持：epub.js 渲染；spine 章节即"页码"，带读/拆书/批注全链路与 PDF 同构 ===== */
+  async _loadEpubLib() {
+    if (window.ePub) return true;
+    try {
+      await SR.loadScript([
+        'vendor/epub.min.js',
+        'https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js',
+        'https://unpkg.com/epubjs@0.3.93/dist/epub.min.js',
+      ]);
+    } catch { /* 走 CDN 失败 */ }
+    return !!window.ePub;
+  },
+
+  async openEpub(absPath) {
+    if (!(await this._loadEpubLib())) { SR.toast('epub.js 未加载成功：请检查网络或 vendor/epub.min.js', 'error', 5000); return; }
+    SR.toast('正在打开 EPUB…');
+    let book;
+    try { book = ePub('/api/fs/file?path=' + encodeURIComponent(absPath)); await book.ready; }
+    catch (e) { SR.toast('打开 EPUB 失败：' + (e.message || e), 'error', 5000); return; }
+    const saved = await SR.api('/api/annotations?path=' + encodeURIComponent(absPath)).catch(() => ({ annotations: [], readPos: 1 }));
+    const prevDoc = SR.state.doc;
+    if (prevDoc && prevDoc.path !== absPath && SR.chat && SR.chat.swapSession) {
+      try { await SR.chat.swapSession(absPath); } catch (e) { console.warn('[SR] 对话页切换失败（不影响打开）', e); }
+    }
+    let meta = '';
+    try { meta = (book.packaging && book.packaging.metadata && book.packaging.metadata.title) || ''; } catch { /* 无元数据 */ }
+    const spineLen = (book.spine && book.spine.length) || 1;
+    SR.state.doc = {
+      kind: 'epub', path: absPath,
+      title: meta || absPath.split(/[\\/]/).pop().replace(/\.epub$/i, ''),
+      pdf: null, book, pages: spineLen,          // "页" = spine 章（材料标记 [p.n]、@p n 同构）
+      ann: (saved && saved.annotations) || [],
+      readPos: (saved && saved.readPos) || 1,
+      partsDone: (saved && saved.partsDone) || {},
+      weakPoints: (saved && Array.isArray(saved.weakPoints)) ? saved.weakPoints : [],
+      zoom: 1, baseScale: 1, outline: [], parts: [], renderSeq: 0,
+    };
+    const d = SR.state.doc;
+    document.getElementById('docTitle').textContent = `${d.title} · ${spineLen} 章`;
+    SR.setMode('reader');
+    this.readalong.on = false; this.readalong.goal = null; this.readalong.bannerShownFor = null;
+    this.hideBanner();
+    const raBtn = document.getElementById('btnReadalong');
+    raBtn.textContent = '🚶 陪读:关'; raBtn.classList.remove('active-btn');
+    document.getElementById('raProgressWrap').classList.add('hidden');
+    this._buildEpubView();
+    const safe = (label, fn) => { try { fn(); } catch (e) { console.warn('[SR] ' + label + ' 失败（不影响其他功能）', e); } };
+    await this.buildOutline().catch((e) => console.warn('[SR] buildOutline(epub) 失败', e));
+    await this.buildParts().catch((e) => console.warn('[SR] buildParts(epub) 失败', e));
+    await this.loadBookmap().catch((e) => console.warn('[SR] loadBookmap 失败', e));
+    safe('renderAnnotsList', () => this.renderAnnotsList());
+    safe('renderBookmap', () => this.renderBookmap());
+    SR.persist.save();
+    this.saveAnnDebounced();
+    /* 圈图/缩放对 EPUB 无意义：按钮就地禁用提示 */
+    const boxBtn = document.getElementById('btnBoxAsk');
+    if (boxBtn) boxBtn.title = '圈图仅支持 PDF（EPUB 无固定版面）';
+  },
+
+  _buildEpubView() {
+    const d = this.doc;
+    const scroll = this.scroll;
+    scroll.innerHTML = '';
+    const view = SR.el('div', { id: 'epubView' });
+    scroll.appendChild(view);
+    const rendition = d.book.renderTo(view, {
+      width: '100%', height: '100%',
+      flow: 'paginated', spread: 'none',
+      allowScriptedContent: false,
+    });
+    d.rendition = rendition;
+    rendition.themes.default({
+      body: { 'padding': '0 6px' },
+      '::selection': { 'background': 'rgba(255,213,79,.45)' },
+    });
+    /* 翻页：容器左右半屏点击（epub.js 内置）+ 键盘 */
+    const keyHandler = (e) => {
+      if (!SR.state.doc || SR.state.doc.kind !== 'epub') return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') rendition.next();
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') rendition.prev();
+    };
+    document.addEventListener('keyup', keyHandler);
+    this._epubKeyCleanup = () => document.removeEventListener('keyup', keyHandler);
+    /* 位置变化：维护 readPos（=spine 索引+1）+ 陪读 tick + 工具条收起 */
+    rendition.on('relocated', (loc) => {
+      const idx = (loc && loc.start && Number.isFinite(loc.start.index)) ? loc.start.index : 0;
+      d.readPos = idx + 1;
+      this.setPageIndicator(d.readPos);
+      this.onReadalongTick(d.readPos);
+      this.saveAnnDebounced();
+    });
+    /* 选区：iframe 内原生 selection → CFI → 工具条（复用 selToolbar 全套操作） */
+    rendition.on('selected', (cfi, range) => {
+      const r = range.getBoundingClientRect();
+      const ifr = (rendition.getContents()[0] && rendition.getContents()[0].document && rendition.getContents()[0].document.defaultView && rendition.getContents()[0].document.defaultView.frameElement) || view;
+      const ir = ifr.getBoundingClientRect();
+      const page = d.readPos || 1;
+      const text = String(range.toString() || '').replace(/\s+/g, ' ').trim();
+      if (!text) return;
+      this._sel = { pages: [{ page, text }], text, cfi, epub: true };
+      const toolbar = document.getElementById('selToolbar');
+      toolbar.classList.remove('hidden');
+      this.refreshToolbarColor();
+      toolbar.style.left = Math.max(8, Math.min(window.innerWidth - 250, ir.left + r.left + r.width / 2 - 115)) + 'px';
+      toolbar.style.top = Math.max(54, ir.top + r.top - 48) + 'px';
+    });
+    /* 恢复高亮（CFI 版批注）+ 打开上次位置 */
+    for (const a of d.ann) if (a.cfi) { try { this._epubApplyHl(a); } catch { /* cfi 失效则跳过 */ } }
+    rendition.display(Math.max(0, Math.min(d.pages - 1, (d.readPos || 1) - 1)));
+  },
+
+  _epubApplyHl(a) {
+    const d = this.doc;
+    if (!d || !d.rendition || !a.cfi) return;
+    d.rendition.annotations.add('highlight', a.cfi, { id: a.id }, () => {
+      try { this.openNoteCard(a, null); } catch { /* 卡片失败不炸 */ }
+    }, 'sr-epub-hl', { fill: a.color || '#ffd54f' });
+  },
+
+  _epubDocText(doc) {
+    let t = '';
+    try { t = doc.body ? (doc.body.innerText || doc.body.textContent || '') : (doc.textContent || ''); }
+    catch { t = doc.textContent || ''; }
+    return String(t).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  },
+
+  teardownEpub() {
+    if (this._epubKeyCleanup) { this._epubKeyCleanup(); this._epubKeyCleanup = null; }
+    const d = this.doc;
+    try { if (d && d.rendition) d.rendition.destroy(); } catch { /* 已销毁 */ }
+  },
+
   async buildOutline() {
     const d = this.doc;
+    if (d.kind === 'epub') {
+      let toc = [];
+      try { toc = (await d.book.loaded.navigation).toc || []; } catch { /* 无目录 */ }
+      const panel = document.getElementById('panelToc');
+      panel.innerHTML = '';
+      const renderItems = (items, lv) => {
+        for (const it of items || []) {
+          panel.appendChild(SR.el('div', {
+            class: 'toc-item', style: `--lv:${lv}`,
+            onclick: () => { const sec = d.book.spine.get(String(it.href || '').split('#')[0]); if (sec) d.rendition.display(sec.index); },
+          }, (it.label || it.titleText || '(无标题)').trim()));
+          if (it.subitems && it.subitems.length && lv < 2) renderItems(it.subitems, lv + 1);
+        }
+      };
+      renderItems(toc, 0);
+      if (!panel.children.length) panel.appendChild(SR.el('div', { class: 'hint pad' }, '此 EPUB 没有内嵌目录；可按章选择部分。'));
+      return;
+    }
     let ol = null;
     try { ol = await d.pdf.getOutline(); } catch { /* 无目录 */ }
     d.outline = ol || [];
@@ -1322,6 +1602,38 @@ SR.reader = {
 
   async buildParts() {
     const d = this.doc;
+    if (d.kind === 'epub') {
+      /* EPUB 部分 = TOC 顶层章节映射到 spine 区间；无 TOC 则每 6 章一段 */
+      const parts = [];
+      let tops = [];
+      try {
+        const toc = (await d.book.loaded.navigation).toc || [];
+        for (const it of toc) {
+          const href = String(it.href || '').split('#')[0];
+          const sec = href ? d.book.spine.get(href) : null;
+          if (sec && Number.isFinite(sec.index)) tops.push({ title: (it.label || '').trim() || '（无标题）', from: sec.index + 1 });
+        }
+      } catch { /* 无目录 */ }
+      tops.sort((a, b) => a.from - b.from);
+      tops = tops.filter((t, i) => i === 0 || t.from > tops[i - 1].from);   // 去重同章入口
+      const meaty = tops.filter((t) => !this.isTrivialPart(t));
+      const useTops = meaty.length ? meaty : tops;
+      if (useTops.length >= 2) {
+        for (let i = 0; i < useTops.length; i++) {
+          const from = useTops[i].from;
+          const to = i + 1 < useTops.length ? Math.max(from, useTops[i + 1].from - 1) : d.pages;
+          if (to >= from) parts.push({ id: 'sec' + i, title: useTops[i].title, from, to });
+        }
+      } else if (d.pages > 1) {
+        const step = Math.max(1, Math.ceil(d.pages / 12));
+        for (let from = 1; from <= d.pages; from += step) {
+          parts.push({ id: 'seg' + from, title: `第 ${from}–${Math.min(from + step - 1, d.pages)} 章`, from, to: Math.min(from + step - 1, d.pages) });
+        }
+      }
+      d.parts = parts;
+      this.refreshPartSelect();
+      return;
+    }
     const parts = [];
     const tops = [];
     for (const it of d.outline.slice(0, 60)) {
@@ -1399,6 +1711,23 @@ SR.reader = {
 
   async getPartMaterial(part) {
     const d = this.doc;
+    if (d.kind === 'epub') {
+      let text = '';
+      for (let p = part.from; p <= part.to; p++) {
+        try {
+          const sec = d.book.spine.get(p - 1);
+          if (!sec) continue;
+          const doc = await sec.load(d.book.load.bind(d.book));
+          const body = this._epubDocText(doc);
+          if (body) text += `\n[p.${p}]\n${body}\n\n`;
+        } catch { /* 跳过坏章 */ }
+        if (text.length > 60000) { text = text.slice(0, 60000) + '\n…(已截断)'; break; }
+      }
+      const highlights = d.ann
+        .filter((a) => a.page >= part.from && a.page <= part.to)
+        .map((a) => `p.${a.page}「${(a.text || '').slice(0, 120)}」${a.note ? ' 💡' + a.note : ''}`);
+      return { text: text.trim(), highlights, images: [], imgPages: [] };
+    }
     let text = '';
     const imgPages = [];          // 含显著图形对象的页码（供视觉模型截屏）
     for (let p = part.from; p <= part.to; p++) {

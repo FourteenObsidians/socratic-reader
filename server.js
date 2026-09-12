@@ -129,6 +129,7 @@ const MIME = {
   '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
   '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.md': 'text/markdown; charset=utf-8',
+  '.epub': 'application/epub+zip',
 };
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
@@ -147,7 +148,7 @@ function serveStatic(req, res, pathname) {
 }
 
 /* ---------------- 文件浏览 ---------------- */
-const OPENABLE = new Set(['.pdf', '.md', '.txt', '.json', '.canvas']);
+const OPENABLE = new Set(['.pdf', '.md', '.txt', '.json', '.canvas', '.epub']);
 async function listDir(abs) {
   const out = [];
   let entries = [];
@@ -630,6 +631,10 @@ async function handleApi(req, res, url) {
     const ext = path.extname(abs).toLowerCase();
     if (ext === '.pdf') {
       res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': st.size, 'Cache-Control': 'no-cache' });
+      return fs.createReadStream(abs).pipe(res);
+    }
+    if (ext === '.epub') {
+      res.writeHead(200, { 'Content-Type': 'application/epub+zip', 'Content-Length': st.size, 'Cache-Control': 'no-cache' });
       return fs.createReadStream(abs).pipe(res);
     }
     if (['.md', '.txt', '.json', '.canvas'].includes(ext)) {

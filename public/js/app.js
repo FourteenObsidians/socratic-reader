@@ -154,13 +154,13 @@ SR.library = {
     const list = SR.el('div', { class: 'file-list' });
     if (!data.entries.length) list.appendChild(SR.el('div', { class: 'hint pad' }, '（空目录）'));
     for (const e of data.entries) {
-      const icon = e.dir ? '📁' : e.ext === '.pdf' ? '📕' : e.ext === '.md' ? '📝' : e.ext === '.txt' ? '📄' : e.ext === '.json' ? '🧾' : '📎';
+      const icon = e.dir ? '📁' : e.ext === '.pdf' ? '📕' : e.ext === '.epub' ? '📗' : e.ext === '.md' ? '📝' : e.ext === '.txt' ? '📄' : e.ext === '.json' ? '🧾' : '📎';
       const size = e.dir ? '' : (e.size > 1048576 ? (e.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(e.size / 1024)) + ' KB');
       list.appendChild(SR.el('div', {
         class: 'file-row' + (e.dir ? ' dir' : ''),
         onclick: () => {
           if (e.dir) { SR.library.path = e.path; SR.library.render(); }
-          else if (e.ext === '.pdf') SR.reader.open(e.path);
+          else if (e.ext === '.pdf' || e.ext === '.epub') SR.reader.open(e.path);
           else if (e.ext === '.md' || e.ext === '.txt' || e.ext === '.json') SR.showMd(e.path, e.name);
         },
       },
@@ -251,7 +251,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v43.1-递归速查卡';
+  SR.VERSION = 'v44-EPUB支持';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#e3b34c;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
