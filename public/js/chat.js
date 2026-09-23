@@ -631,9 +631,12 @@ SR.chat = {
     if (part.to - part.from + 1 > 40) {
       SR.toast('⚠ WIT 精读适合 ≤40 页的段落（整篇论文/一个章节最佳），太长 claim 分析会掺水', 'info', 5000);
     }
-    SR.toast('正在提取材料…');
+    const pg = SR.progress('material', `📥 提取材料 · ${part.title.slice(0, 16)}（p.${part.from}–${part.to}）`);
+    pg.set(20, '逐页提取文本…');
     const mat = await SR.reader.getPartMaterial(part);
-    if (!mat.text) { SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
+    if (!mat.text) { pg.fail('该部分没有可提取的文本（扫描件？）'); SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
+    pg.set(mat.images && mat.images.length ? 80 : 100, mat.images && mat.images.length ? '截取图表页…' : '');
+    pg.done(`已提取 ${(mat.text.length / 1000).toFixed(1)}k 字${mat.highlights.length ? ' · 批注 ' + mat.highlights.length + ' 条' : ''}`, 1800);
     const memory = await this.learningMemory(`${d.title} ${part.title}`);
     const system = [
       SR.state.prompts.wit,
@@ -669,9 +672,12 @@ SR.chat = {
     if (part.to - part.from + 1 > 60 && !(SR.state.doc.bookmap && SR.state.doc.bookmap.nodes.length)) {
       SR.toast('⚠ 这个部分有 ' + (part.to - part.from + 1) + ' 页——材料太大会被截断且讲解混杂。建议先「🗺 拆书」切成细粒度节点', 'info', 6000);
     }
-    SR.toast('正在提取该部分文本…');
+    const pg = SR.progress('material', `📥 提取材料 · ${part.title.slice(0, 16)}（p.${part.from}–${part.to}）`);
+    pg.set(20, '逐页提取文本…');
     const mat = await SR.reader.getPartMaterial(part);
-    if (!mat.text) { SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
+    if (!mat.text) { pg.fail('该部分没有可提取的文本（扫描件？）'); SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
+    pg.set(mat.images && mat.images.length ? 80 : 100, mat.images && mat.images.length ? '截取图表页…' : '');
+    pg.done(`已提取 ${(mat.text.length / 1000).toFixed(1)}k 字${mat.highlights.length ? ' · 批注 ' + mat.highlights.length + ' 条' : ''}`, 1800);
     const P = SR.state.prompts;
     const memory = await this.learningMemory(`${d.title} ${part.title}`);
     const system = [
@@ -755,9 +761,12 @@ SR.chat = {
     if (!d) { SR.toast('请先打开一个 PDF'); return; }
     const part = partArg || SR.reader.currentPart();
     if (!part) { SR.toast('请先选择一个部分'); return; }
-    SR.toast('正在提取该部分文本…');
+    const pg = SR.progress('material', `📥 提取材料 · ${part.title.slice(0, 16)}（p.${part.from}–${part.to}）`);
+    pg.set(20, '逐页提取文本…');
     const mat = await SR.reader.getPartMaterial(part);
-    if (!mat.text) { SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
+    if (!mat.text) { pg.fail('该部分没有可提取的文本（扫描件？）'); SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
+    pg.set(mat.images && mat.images.length ? 80 : 100, mat.images && mat.images.length ? '截取图表页…' : '');
+    pg.done(`已提取 ${(mat.text.length / 1000).toFixed(1)}k 字${mat.highlights.length ? ' · 批注 ' + mat.highlights.length + ' 条' : ''}`, 1800);
     const P = SR.state.prompts;
     const memory = await this.learningMemory(`${d.title} ${part.title}`);
     const system = [

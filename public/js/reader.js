@@ -1963,36 +1963,39 @@ SR.reader = {
     const d = this.doc;
     if (!d) { SR.toast('先打开一个文档'); return; }
     if (!d.outline.length && !d.parts.length) { SR.toast('此文档没有目录，无法拆书'); return; }
-    SR.toast('🗺 分层拆书：先按章，再看内容…', 'info', 4000);
+    SR.toast('🗺 分层拆书：先按章，再看内容…', 'info', 2000);
+    const pg = SR.progress('bookmap', `🗺 拆书 · ${d.title.slice(0, 18)}`);
     try {
       const chapters = await this._bmChapters();
-      if (!chapters.length) { SR.toast('没有可用的章节边界（目录为空？）', 'error'); return; }
+      if (!chapters.length) { pg.fail('没有可用的章节边界（目录为空？）'); SR.toast('没有可用的章节边界（目录为空？）', 'error'); return; }
       const allNodes = [];
       let chIdx = 0;
       for (const ch of chapters) {
         chIdx++;
+        const size = ch.to - ch.from + 1;
         let secs = [];
-        /* ① 二级目录直用 */
         const subs = await this._bmSubEntries(ch);
-        if (subs.length >= 2) secs = this._bmNormalize(subs, ch);
-        /* ② 小章单节点 ③ 大章 LLM 按内容拆 */
+        if (subs.length >= 2) {
+          pg.set((chIdx - 1) / chapters.length * 100, `📑 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」用目录小节（${subs.length} 节 · ${size} 页）`);
+          secs = this._bmNormalize(subs, ch);
+        }
+        if (!secs.length && size <= this.BM_MAX_NODE_PAGES) {
+          pg.set((chIdx - 0.5) / chapters.length * 100, `📄 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」小章单节点（${size} 页）`);
+          secs = [{ title: ch.title, from: ch.from, to: ch.to }];
+        }
         if (!secs.length) {
-          const size = ch.to - ch.from + 1;
-          if (size <= this.BM_MAX_NODE_PAGES) {
-            secs = [{ title: ch.title, from: ch.from, to: ch.to }];
-          } else {
-            SR.toast(`📑 「${ch.title.slice(0, 18)}」 ${size} 页 → 按内容细拆…`, 'info', 2500);
-            const sample = await this._bmSample(ch.from, ch.to);
-            const raw = await this._bmSplitLLM(ch, sample);
-            secs = this._bmNormalize(raw, ch);
-            if (!secs.length) {   // LLM 失败兜底：章只比阈值略大 → 整章单节点；真大章才等宽切
-              if (size <= this.BM_MAX_NODE_PAGES * 1.3) {
-                secs = [{ title: ch.title, from: ch.from, to: ch.to }];
-              } else {
-                const k = Math.ceil(size / this.BM_MAX_NODE_PAGES);
-                const w = Math.ceil(size / k);
-                for (let i = 0; i < k; i++) secs.push({ title: `${ch.title}（${i + 1}/${k}）`, from: ch.from + i * w, to: Math.min(ch.to, ch.from + (i + 1) * w - 1) });
-              }
+          pg.set((chIdx - 0.7) / chapters.length * 100, `🔍 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」采样 ${size} 页首行…`);
+          const sample = await this._bmSample(ch.from, ch.to);
+          pg.set((chIdx - 0.4) / chapters.length * 100, `🤖 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」AI 找边界…`);
+          const raw = await this._bmSplitLLM(ch, sample);
+          secs = this._bmNormalize(raw, ch);
+          if (!secs.length) {   // LLM 失败兜底：章只比阈值略大 → 整章单节点；真大章才等宽切
+            if (size <= this.BM_MAX_NODE_PAGES * 1.3) {
+              secs = [{ title: ch.title, from: ch.from, to: ch.to }];
+            } else {
+              const k = Math.ceil(size / this.BM_MAX_NODE_PAGES);
+              const w = Math.ceil(size / k);
+              for (let i = 0; i < k; i++) secs.push({ title: `${ch.title}（${i + 1}/${k}）`, from: ch.from + i * w, to: Math.min(ch.to, ch.from + (i + 1) * w - 1) });
             }
           }
         }
@@ -2011,6 +2014,7 @@ SR.reader = {
         prev = n;
       }
       /* 元数据增强（一次轻量调用：只喂节点清单，不喂正文） */
+      pg.set(94, '🔗 分析跨章依赖与重点节点…');
       try {
         const list = allNodes.map((n) => `${n.id}|${n.title}|p.${n.from}-${n.to}|${n.chapter}`).join('\n');
         const sys = `你是教学规划专家。下面是一本书拆好的知识节点清单（id|标题|页码|所属章）。请只调整元数据：
@@ -2037,10 +2041,10 @@ SR.reader = {
       this.renderBookmap();
       this.refreshPartSelect();
       const big = chapters.filter((c) => c.to - c.from + 1 > this.BM_MAX_NODE_PAGES).length;
-      SR.toast(`🗺 拆书完成：${chapters.length} 章 → ${allNodes.length} 个节点（${big} 个大章按内容细拆）`, 'success', 4500);
+      pg.done(`${chapters.length} 章 → ${allNodes.length} 个节点（${big} 个大章按内容细拆）`, 4200);
     } catch (e) {
       console.warn('[SR拆书] 失败', e);
-      SR.toast('拆书失败：' + (e.message || e), 'error', 5000);
+      pg.fail('拆书失败：' + (e.message || e));
     }
   },
 

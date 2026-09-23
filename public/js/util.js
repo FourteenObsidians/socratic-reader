@@ -32,6 +32,29 @@ SR.toast = (msg, type = 'info', ms = 2600) => {
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms);
 };
 
+/* 长任务进度 toast：返回控制器 {set(pct, msg), note, done, fail, close}；同 key 复用一条 */
+SR.progress = (key, title) => {
+  const box = document.getElementById('toasts');
+  if (!box) return { set(){}, note(){}, done(){}, fail(){}, close(){} };
+  const old = box.querySelector(`.toast[data-key="${key}"]`);
+  if (old) old.remove();
+  const el = document.createElement('div');
+  el.className = 'toast info prog';
+  el.dataset.key = key;
+  el.innerHTML = '<div class="pg-title"></div><div class="pg-bar"><div class="pg-fill"></div></div><div class="pg-note"></div>';
+  const t = el.querySelector('.pg-title'), f = el.querySelector('.pg-fill'), n = el.querySelector('.pg-note');
+  t.textContent = title || '';
+  box.appendChild(el);
+  const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 350); };
+  return {
+    set(pct, msg) { f.style.width = Math.max(0, Math.min(100, pct)) + '%'; if (msg !== undefined) n.textContent = msg; },
+    note(msg) { n.textContent = msg; },
+    done(msg, ms = 2600) { f.style.width = '100%'; el.classList.remove('info'); el.classList.add('success'); if (msg) n.textContent = msg; setTimeout(close, ms); },
+    fail(msg, ms = 5000) { el.classList.remove('info'); el.classList.add('error'); if (msg) n.textContent = msg; setTimeout(close, ms); },
+    close,
+  };
+};
+
 /* ---------- DOM / 文本 ---------- */
 SR.esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 SR.el = (tag, attrs = {}, ...children) => {
