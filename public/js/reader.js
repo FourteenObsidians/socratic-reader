@@ -1981,7 +1981,7 @@ SR.reader = {
         }
         if (!secs.length && size <= this.BM_MAX_NODE_PAGES) {
           pg.set((chIdx - 0.5) / chapters.length * 100, `📄 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」小章单节点（${size} 页）`);
-          secs = [{ title: ch.title, from: ch.from, to: ch.to }];
+          secs = [{ title: ch.title, from: ch.from, to: ch.to, src: ch.outline ? 'toc' : 'whole', reason: ch.subs && ch.subs.length ? ch.subs.join(' · ') : '' }];
         }
         if (!secs.length) {
           pg.set((chIdx - 0.7) / chapters.length * 100, `🔍 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」采样 ${size} 页首行…`);
@@ -1991,11 +1991,11 @@ SR.reader = {
           secs = this._bmNormalize(raw, ch);
           if (!secs.length) {   // LLM 失败兜底：章只比阈值略大 → 整章单节点；真大章才等宽切
             if (size <= this.BM_MAX_NODE_PAGES * 1.3) {
-              secs = [{ title: ch.title, from: ch.from, to: ch.to }];
+              secs = [{ title: ch.title, from: ch.from, to: ch.to, src: ch.outline ? 'toc' : 'whole', reason: ch.subs && ch.subs.length ? ch.subs.join(' · ') : '' }];
             } else {
               const k = Math.ceil(size / this.BM_MAX_NODE_PAGES);
               const w = Math.ceil(size / k);
-              for (let i = 0; i < k; i++) secs.push({ title: `${ch.title}（${i + 1}/${k}）`, from: ch.from + i * w, to: Math.min(ch.to, ch.from + (i + 1) * w - 1) });
+              for (let i = 0; i < k; i++) secs.push({ title: `${ch.title}（${i + 1}/${k}）`, from: ch.from + i * w, to: Math.min(ch.to, ch.from + (i + 1) * w - 1), src: 'whole', reason: '' });
             }
           }
         }
@@ -2004,8 +2004,13 @@ SR.reader = {
           title: (secs.length > 1 && String(s.title).startsWith(ch.title.slice(0, 6)) === false && secs.length > 1) ? `${ch.title.slice(0, 12)}·${s.title}`.slice(0, 44) : s.title,
           from: s.from, to: s.to,
           minutes: Math.max(8, Math.round((s.to - s.from + 1) * 2.5)),
-          difficulty: 1, deps: [], risk: false, reason: s.reason || '',
+          difficulty: 1, deps: [], risk: false,
+          reason: s.reason || '',
+          src: s.src || 'toc',                       // 节点来源：toc=目录参考（⭐可信） | llm=内容采样 | whole=整章
         }));
+        chapters[chIdx - 1].summary = ch.subs && ch.subs.length
+          ? ch.subs.join(' / ')                       // 章摘要：目录二级直拼（零 AI，最可信）
+          : (secs.length > 1 ? secs.map((s) => s.title).join(' / ') : secs[0].reason || secs[0].title);
       }
       /* 章内链式 deps 兜底 */
       let prev = null;
@@ -2036,7 +2041,8 @@ SR.reader = {
           }
         }
       } catch { /* 元数据失败：链式兜底已就位 */ }
-      d.bookmap = { nodes: allNodes, generatedAt: Date.now(), v: 2 };
+      d.bookmap = { nodes: allNodes, generatedAt: Date.now(), v: 2,
+        chapters: chapters.map((c) => ({ title: c.title, from: c.from, to: c.to, summary: c.summary || '', srcOutline: !!c.outline })) };
       await SR.apiPut('/api/bookmap', { path: d.path, title: d.title, nodes: allNodes }).catch(() => {});
       this.renderBookmap();
       this.refreshPartSelect();
@@ -2058,13 +2064,21 @@ SR.reader = {
         for (const it of toc) {
           const href = String(it.href || '').split('#')[0];
           const sec = href ? d.book.spine.get(href) : null;
-          if (sec && Number.isFinite(sec.index)) tops.push({ title: (it.label || '').trim() || '（无标题）', from: sec.index + 1 });
+          if (sec && Number.isFinite(sec.index)) tops.push({
+            title: (it.label || '').trim() || '（无标题）', from: sec.index + 1,
+            srcOutline: true,
+            subs: (it.subitems || []).map((s) => (s.label || s.titleText || '').trim()).filter(Boolean).slice(0, 8),
+          });
         }
       } catch { /* 无目录 */ }
     } else {
       for (const it of (d.outline || []).slice(0, 80)) {
         const pg = await this.destToPage(it.dest);
-        tops.push({ title: (it.title || '').trim() || '（无标题）', from: pg || 1 });
+        tops.push({
+          title: (it.title || '').trim() || '（无标题）', from: pg || 1,
+          srcOutline: true,
+          subs: (it.items || []).map((s) => (s.title || '').trim()).filter(Boolean).slice(0, 8),
+        });
       }
     }
     tops.sort((a, b) => a.from - b.from);
@@ -2076,12 +2090,12 @@ SR.reader = {
       for (let i = 0; i < use.length; i++) {
         const from = use[i].from;
         const to = i + 1 < use.length ? Math.max(from, use[i + 1].from - 1) : d.pages;
-        if (to >= from) chapters.push({ title: use[i].title, from, to });
+        if (to >= from) chapters.push({ title: use[i].title, from, to, outline: !!use[i].srcOutline, subs: use[i].subs || [] });
       }
     } else if (d.pages > 1) {
       const step = Math.max(10, Math.ceil(d.pages / 8));
       for (let from = 1; from <= d.pages; from += step) {
-        chapters.push({ title: `第 ${from}–${Math.min(from + step - 1, d.pages)} 页`, from, to: Math.min(from + step - 1, d.pages) });
+        chapters.push({ title: `第 ${from}–${Math.min(from + step - 1, d.pages)} 页`, from, to: Math.min(from + step - 1, d.pages), outline: false, subs: [] });
       }
     }
     return chapters;
@@ -2102,7 +2116,7 @@ SR.reader = {
     const seen = new Set(); const uniq = out.filter((s) => (seen.has(s.from) ? false : (seen.add(s.from), true)));
     /* 关键：每节 to = 下一节起点-1（末节=章末）——不能占位章末，否则规范化中线切割会砍碎 */
     for (let i = 0; i < uniq.length; i++) uniq[i].to = i + 1 < uniq.length ? Math.max(uniq[i].from, uniq[i + 1].from - 1) : ch.to;
-    return uniq.filter((s) => s.to >= s.from);
+    return uniq.filter((s) => s.to >= s.from).map((s) => ({ ...s, src: 'toc', reason: s.title }));
   },
 
   /* 大章抽样：每页首行 ~110 字符（识别小节起始的线索足够，token 可控） */
@@ -2134,7 +2148,7 @@ SR.reader = {
     return lines.join('\n');
   },
 
-  /* 大章 → LLM 按采样文本找小节边界 */
+  /* 大章 → LLM 按采样文本找小节边界 + 每节一句内容概括 */
   async _bmSplitLLM(ch, sample) {
     if (!sample) return [];
     const d = this.doc;
@@ -2142,12 +2156,14 @@ SR.reader = {
 要求：
 1. 每节 ${Math.max(6, Math.round(this.BM_MAX_NODE_PAGES * 0.6))}–${this.BM_MAX_NODE_PAGES} 页左右，在小节真正开始的地方切（从采样里能看出主题切换/新概念入场），不要机械等分；
 2. from/to 为整数页码，必须落在 ${ch.from}..${ch.to} 内；标题用该节实际讲的内容命名（≤16 字，不照抄页首文字）；
-3. 若采样显示本章其实主题单一紧凑，允许只输出 1 节。
+3. reason 用一句话概括该节主要内容是什么（≤28 字，讲"内容"而非"位置"）；
+4. 若采样显示本章其实主题单一紧凑，允许只输出 1 节。
 只输出 JSON 数组，不要代码块不要解释，字符串内禁用英文双引号（用「」）：
-[{"title":"小节名","from":10,"to":24}]`;
+[{"title":"小节名","from":10,"to":24,"reason":"一句话概括本节内容"}]`;
     const user = `书名：${d.title}\n本章：${ch.title}（p.${ch.from}–${ch.to}，共 ${ch.to - ch.from + 1} 页）\n\n逐页采样：\n${sample}`;
     const r = await SR.apiPost('/api/llm/chat', { messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], stream: false, temperature: 0.2 });
-    return SRJsonFix.parseLLMJsonArray(r.content || '');
+    const secs = SRJsonFix.parseLLMJsonArray(r.content || '');
+    return (Array.isArray(secs) ? secs : []).map((s) => ({ ...s, src: 'llm' }));
   },
 
   /* 规范化：夹紧章内 → 排序 → 补覆盖（缝隙归前节）→ 修重叠（中线切）→ 碎片前合并 */
@@ -2158,6 +2174,8 @@ SR.reader = {
         title: String(s.title || '').trim().slice(0, 24) || '（小节）',
         from: Math.round(Number(s.from)) || 0,
         to: Math.round(Number(s.to)) || 0,
+        reason: String(s.reason || '').trim().slice(0, 60),
+        src: s.src || 'llm',
       }))
       .filter((s) => s.from >= ch.from && s.to <= ch.to && s.to >= s.from)
       .sort((a, b) => a.from - b.from);
@@ -2225,16 +2243,37 @@ SR.reader = {
     nodes.forEach((n) => resolve(n.id));
     const hasCh = nodes.some((n) => n.chapter);
     panel.appendChild(SR.el('div', { class: 'section-title' }, `🗺 知识地图 · ${nodes.length} 节点（${Object.keys(d.partsDone || {}).length} 已打卡）`));
-    /* v2 书图：按章分组显示（章 → 节点两级），v1 存量仍走拓扑分层 */
+    /* v2 书图：层次目录（可折叠章 → 节点），v1 存量仍走拓扑分层 */
     if (hasCh) {
-      const chapters = [...new Set(nodes.map((n) => n.chapter))];
-      for (const chTitle of chapters) {
+      const chMeta = d.bookmap.chapters || [];
+      const titles = [...new Set(nodes.map((n) => n.chapter))];
+      /* 默认展开第一个未全打卡的章（当前进度章）；全完则展开最后一章 */
+      let defOpen = titles.findIndex((t) => !(d.partsDone && nodes.filter((n) => n.chapter === t).every((n) => d.partsDone[n.id])));
+      if (defOpen < 0) defOpen = titles.length - 1;
+      titles.forEach((chTitle, ci) => {
         const group = nodes.filter((n) => n.chapter === chTitle);
+        const meta = chMeta.find((m) => m.title.slice(0, 40) === chTitle) || {};
         const span = `${group[0].from}–${group[group.length - 1].to}`;
         const doneN = group.filter((n) => d.partsDone && d.partsDone[n.id]).length;
-        panel.appendChild(SR.el('div', { class: 'map-level-title' }, `📕 ${SR.esc(chTitle)} · p.${span}（${doneN}/${group.length}）`));
-        for (const n of group) this._bmRenderNode(panel, n, d);
-      }
+        const allDone = doneN === group.length;
+        const box = SR.el('div', { class: 'bm-ch' + (allDone ? ' all-done' : '') });
+        const head = SR.el('div', {
+          class: 'bm-ch-head',
+          title: `${meta.summary ? meta.summary + '\n' : ''}p.${span} · ${group.length} 节点`,
+          onclick: () => { box.classList.toggle('open'); head.querySelector('.bm-arrow').textContent = box.classList.contains('open') ? '▾' : '▸'; },
+        });
+        const kids = SR.el('div', { class: 'bm-ch-kids' });
+        head.appendChild(SR.el('span', { class: 'bm-arrow' }, ci === defOpen ? '▾' : '▸'));
+        head.appendChild(SR.el('span', { class: 'bm-ch-title' }, `${allDone ? '✅ ' : ''}${SR.esc(chTitle)}`));
+        head.appendChild(SR.el('span', { class: 'bm-ch-meta' }, `p.${span} · ${doneN}/${group.length}`));
+        if (meta.srcOutline) head.appendChild(SR.el('span', { class: 'bm-badge toc', title: '章节边界来自原书目录（最可信）' }, '📑 目录'));
+        box.appendChild(head);
+        if (meta.summary) box.appendChild(SR.el('div', { class: 'bm-ch-sum', title: meta.summary }, SR.esc(meta.summary.length > 86 ? meta.summary.slice(0, 86) + '…' : meta.summary)));
+        for (const n of group) this._bmRenderNode(kids, n, d);
+        box.appendChild(kids);
+        if (ci === defOpen) box.classList.add('open');
+        panel.appendChild(box);
+      });
       return;
     }
     const maxLv = Math.max(0, ...Object.values(level));
@@ -2256,7 +2295,10 @@ SR.reader = {
       title: (n.reason || '') + `\np.${n.from}–${n.to} · 约 ${n.minutes || '?'} 分钟` + (n.risk ? ' · ⭐ 重点节点' : ''),
     });
     row.appendChild(SR.el('div', { class: 'map-node-title' },
-      (done ? '✅ ' : n.risk ? '⭐ ' : '') + `${n.id} ${SR.esc(n.title)}`));
+      (done ? '✅ ' : n.risk ? '⭐ ' : '') + `${n.id} ${SR.esc(n.title)}`,
+      n.src === 'toc' ? SR.el('span', { class: 'bm-badge toc', title: '来自原书目录（最可信）' }, '📑') : null,
+      n.src === 'llm' ? SR.el('span', { class: 'bm-badge llm', title: 'AI 按章内内容采样划定' }, '🤖') : null));
+    if (n.reason && n.src !== 'toc') row.appendChild(SR.el('div', { class: 'map-node-reason' }, SR.esc(String(n.reason).slice(0, 60))));
     row.appendChild(SR.el('div', { class: 'map-node-meta' },
       `p.${n.from}–${n.to} · ${n.minutes || '?'}min · ${stars}`));
     const ops = SR.el('div', { class: 'map-node-ops' });

@@ -573,6 +573,22 @@ button.active-btn { border-color: var(--accent-dim); color: var(--accent); backg
   border: 1px solid var(--border); border-radius: 10px; cursor: default;
 }
 .map-node.current { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(227,179,76,.3); }
+
+/* ===== 拆书层次目录（章 → 节点，可折叠） ===== */
+.bm-ch { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; overflow: hidden; background: var(--panel2); }
+.bm-ch-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; cursor: pointer; user-select: none; }
+.bm-ch-head:hover { background: var(--panel3); }
+.bm-arrow { width: 14px; font-size: 11px; color: var(--muted); flex: none; }
+.bm-ch-title { font-weight: 600; font-size: 12.5px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-ch-meta { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.bm-ch-sum { padding: 0 9px 7px 29px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+.bm-ch-kids { display: none; padding: 2px 6px 6px 20px; }
+.bm-ch.open .bm-ch-kids { display: block; }
+.bm-ch.all-done .bm-ch-title { color: var(--muted); }
+.bm-badge { font-size: 9.5px; padding: 0 4px; border-radius: 5px; border: 1px solid var(--border); color: var(--muted); margin-left: 4px; white-space: nowrap; }
+.bm-badge.toc { border-color: rgba(102,187,106,.5); color: var(--green, #66bb6a); }
+.bm-badge.llm { border-color: rgba(227,179,76,.5); color: var(--accent, #e3b34c); }
+.map-node-reason { font-size: 10.5px; color: var(--muted); margin: 2px 0 3px; line-height: 1.45; }
 .map-node.done { opacity: .68; }
 .map-node-title { font-size: 13px; font-weight: 600; }
 .map-node-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
