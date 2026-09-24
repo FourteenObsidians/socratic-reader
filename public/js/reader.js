@@ -2009,10 +2009,10 @@ SR.reader = {
       d.bookmap = (r && r.nodes && r.nodes.length) ? r : null;
       /* 旧版算法拆的论文书图（节点=Abstract/Methods 照抄，无内容细化）→ 自动重拆，
          不再指望用户注意到 toast——拆完下拉框/地图就是细粒度节点 */
-      if (d.bookmap && (!d.bookmap.v || d.bookmap.v < 3) && this._bmPaperish() && !d._bmAutoRedone) {
+      if (d.bookmap && (!d.bookmap.v || d.bookmap.v < 4) && !d._bmAutoRedone) {
         d._bmAutoRedone = true;                       // 每次打开只自动重拆一次（防失败循环）
         d.bookmap = null;
-        SR.toast('🗺 检测到旧版书图（节点照抄节名、无内容细化）——自动重新拆书…', 'info', 5000);
+        SR.toast('🗺 检测到旧版书图（粒度粗/节点照抄节名）——自动重新拆书（v4 细粒度）…', 'info', 5000);
         this.generateBookmap().catch(() => {});
       }
     } catch { d.bookmap = null; }
@@ -2027,6 +2027,7 @@ SR.reader = {
        层2 节点 = ① 目录二级条目直用（免费且准）→ ② 小章(≤18页)单节点 → ③ 大章抽页首文本让 AI 找小节边界
        收尾一次轻量调用补 deps/risk 元数据（失败退化为章内链式，不阻塞） */
   BM_MAX_NODE_PAGES: 18,        // 单节点期望上限（带读舒适区）
+  BM_SAMPLE_CHARS: 220,         // 书模式每页采样字符数（220 能逮到页内的小节标题，110 只见首行）
   BM_MERGE_TINY: 3,             // 小于该页数的碎片向前合并
 
   async generateBookmap() {
@@ -2121,9 +2122,9 @@ SR.reader = {
           }
         }
       } catch { /* 元数据失败：链式兜底已就位 */ }
-      d.bookmap = { nodes: allNodes, generatedAt: Date.now(), v: 3,
+      d.bookmap = { nodes: allNodes, generatedAt: Date.now(), v: 4,
         chapters: chapters.map((c) => ({ title: c.title, from: c.from, to: c.to, summary: c.summary || '', srcOutline: !!c.outline })) };
-      await SR.apiPut('/api/bookmap', { path: d.path, title: d.title, nodes: allNodes, v: 3, chapters: d.bookmap.chapters }).catch(() => {});
+      await SR.apiPut('/api/bookmap', { path: d.path, title: d.title, nodes: allNodes, v: 4, chapters: d.bookmap.chapters }).catch(() => {});
       this.renderBookmap();
       this.refreshPartSelect();
       const big = chapters.filter((c) => c.to - c.from + 1 > this.BM_MAX_NODE_PAGES).length;
@@ -2229,7 +2230,7 @@ SR.reader = {
     const lines = [];
     const size = to - from + 1;
     const step = full ? 1 : Math.max(1, Math.ceil(size / 80));       // 常规最多采 80 页；论文全抽
-    const cap = full ? 2000 : 110;
+    const cap = full ? 2000 : (this.BM_SAMPLE_CHARS || 220);
     if (d.kind === 'epub') {
       for (let p = from; p <= to; p += step) {
         try {
@@ -2268,14 +2269,15 @@ SR.reader = {
 5. from/to 为整数页码，必须落在 ${ch.from}..${ch.to} 内。
 只输出 JSON 数组，不要代码块不要解释，字符串内禁用英文双引号（用「」）：
 [{"title":"内容命名的小块","from":3,"to":5,"reason":"概括这块讲了什么具体内容"}]`
-      : `你是教材编辑。下面是一章的逐页首行采样（p.页码: 内容开头）。请把这一章拆成可独立带读的小节。
+      : `你是教材编辑。下面是一章的逐页采样（p.页码: 每页开头 ${this.BM_SAMPLE_CHARS || 220} 字）。请把这一章拆成可独立带读的小节——细到像书的目录：一个二级小节一块。
 要求：
-1. 每节 ${Math.max(6, Math.round(this.BM_MAX_NODE_PAGES * 0.6))}–${this.BM_MAX_NODE_PAGES} 页左右，在小节真正开始的地方切（从采样里能看出主题切换/新概念入场），不要机械等分；
-2. from/to 为整数页码，必须落在 ${ch.from}..${ch.to} 内；标题用该节实际讲的内容命名（≤16 字，不照抄页首文字）；
-3. reason 用一句话概括该节主要内容是什么（≤28 字，讲"内容"而非"位置"）；
-4. 若采样显示本章其实主题单一紧凑，允许只输出 1 节。
+1. 每节 4–10 页左右（信息密的节更小），宁小勿大；在小节真正开始的地方切（采样里出现新的小节标题/主题切换处），不要机械等分；
+2. 标题【优先用采样中能看到的真实小节标题】（如「2.3 隐马尔可夫模型」→ 去掉编号用「隐马尔可夫模型」）；采样里看不出小节标题时，才按内容命名（≤16 字，不照抄页首文字）；
+3. from/to 为整数页码，必须落在 ${ch.from}..${ch.to} 内；
+4. reason 一句话概括该节主要内容（≤28 字，讲"内容"而非"位置"）；
+5. 若采样显示本章其实主题单一紧凑，允许只输出 1 节。
 只输出 JSON 数组，不要代码块不要解释，字符串内禁用英文双引号（用「」）：
-[{"title":"小节名","from":10,"to":24,"reason":"一句话概括本节内容"}]`;
+[{"title":"小节名","from":10,"to":16,"reason":"一句话概括本节内容"}]`;
     const user = `书名：${d.title}\n本${paper ? ' section' : '章'}：${ch.title}（p.${ch.from}–${ch.to}，共 ${size} 页）\n\n${paper ? '全文' : '逐页采样'}：\n${sample}`;
     const r = await SR.apiPost('/api/llm/chat', { messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], stream: false, temperature: 0.2 });
     const secs = SRJsonFix.parseLLMJsonArray(r.content || '');

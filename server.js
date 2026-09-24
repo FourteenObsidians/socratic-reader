@@ -520,15 +520,16 @@ async function llmChat(req, res) {
      圈图提问等小请求仍走视觉通道。阈值 24k 字符（约 12k token） */
   const rawMsgs = body.messages || [];
   const rawLen = JSON.stringify(rawMsgs).length;
-  const hasImage = rawLen < 200000 && rawMsgs.some((m) => Array.isArray(m.content) && m.content.some((p) => p && p.type === 'image_url'));
-  let useVision = hasImage && cfg.llm.visionModel;
+  /* 有无图：无条件扫描（rawLen 上限守卫会让大材料误判"无图"→带着 image_url 走文本模型 → 上游 1210） */
+  const hasImage = rawMsgs.some((m) => Array.isArray(m.content) && m.content.some((p) => p && p.type === 'image_url'));
+  let useVision = hasImage && cfg.llm.visionModel && rawLen <= 24000;
   let messages = rawMsgs;
-  if (useVision && rawLen > 24000) {
-    useVision = false;
+  if (hasImage && !useVision) {
+    /* 材料过大或未配视觉模型 → 主力文本模型 + 剥图片部件（一律剥净，不许 image_url 漏进文本端点） */
     messages = rawMsgs.map((m) => Array.isArray(m.content)
-      ? { ...m, content: m.content.filter((p) => p && p.type === 'text').map((p) => p.text || '').join('\n') || '（材料过大，图片部分已省略，按正文继续）' }
+      ? { ...m, content: m.content.filter((p) => p && p.type === 'text').map((p) => p.text || '').join('\n') || '（图片部分已省略，按正文继续）' }
       : m);
-    console.log(`[SR] multimodal 材料过大（${rawLen} 字符）→ 视觉降级为文本模型`);
+    console.log(`[SR] multimodal 材料过大（${rawLen} 字符）→ 视觉降级为文本模型，已剥离图片部件`);
   }
   const payload = {
     model: useVision ? cfg.llm.visionModel : cfg.llm.model,
