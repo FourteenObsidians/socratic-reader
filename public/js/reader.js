@@ -2007,9 +2007,13 @@ SR.reader = {
     try {
       const r = await SR.api('/api/bookmap?path=' + encodeURIComponent(d.path));
       d.bookmap = (r && r.nodes && r.nodes.length) ? r : null;
-      /* 旧版算法拆的书图（v45.5 之前：论文不细化、节点照抄节名）→ 提示重拆，下拉框才有细粒度节点 */
-      if (d.bookmap && (!d.bookmap.v || d.bookmap.v < 3) && this._bmPaperish()) {
-        SR.toast('🗺 这篇论文的书图是旧算法拆的（节点=Abstract/Methods 原文标题，无内容细化）——建议重新点「🗺 拆书」', 'info', 7000);
+      /* 旧版算法拆的论文书图（节点=Abstract/Methods 照抄，无内容细化）→ 自动重拆，
+         不再指望用户注意到 toast——拆完下拉框/地图就是细粒度节点 */
+      if (d.bookmap && (!d.bookmap.v || d.bookmap.v < 3) && this._bmPaperish() && !d._bmAutoRedone) {
+        d._bmAutoRedone = true;                       // 每次打开只自动重拆一次（防失败循环）
+        d.bookmap = null;
+        SR.toast('🗺 检测到旧版书图（节点照抄节名、无内容细化）——自动重新拆书…', 'info', 5000);
+        this.generateBookmap().catch(() => {});
       }
     } catch { d.bookmap = null; }
     this.refreshPartSelect();                          // 节点加载后进入选择器

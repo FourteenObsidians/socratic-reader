@@ -526,6 +526,7 @@ SR.chat = {
           if (box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight;
         },
       });
+      if (!acc || !acc.trim()) throw new Error('模型未返回内容（推理耗尽或上游空响应）——请再试一次，或到 ⚙ 设置调大 max tokens');
       s.messages.push({ role: 'assistant', content: acc });
       this._restoreTextMsg(s);   /* multimodal 发送完成 → 会话里换回占位文本（存储/渲染用） */
       this._thinkT0 = null;

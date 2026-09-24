@@ -514,13 +514,25 @@ async function llmChat(req, res) {
   const isLocal = /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(url);
   if (!cfg.llm.apiKey && !isLocal) return sendJSON(res, 400, { error: '未配置 API Key，请打开 ⚙ 设置填写（本地 Ollama 可留空）' });
   const stream = body.stream !== false;
-  /* 视觉路由：消息里含 image_url 且配置了 visionModel → 该请求整体走视觉模型
-     （上下文文字+图一起发给视觉模型，它兼读文字；普通纯文本请求仍走主力模型） */
-  const hasImage = JSON.stringify(body.messages || []).includes('"image_url"');
-  const useVision = hasImage && cfg.llm.visionModel;
+  /* 视觉路由：含 image_url 且配置了 visionModel → 走视觉模型。
+     但带读/复盘的【材料型】multimodal（几十 k 文本 + 页快照）远超视觉模型上下文，
+     上游直接 400（= 首轮永远无回答的根因）→ 降级主力文本模型并剥离图片部分；
+     圈图提问等小请求仍走视觉通道。阈值 24k 字符（约 12k token） */
+  const rawMsgs = body.messages || [];
+  const rawLen = JSON.stringify(rawMsgs).length;
+  const hasImage = rawLen < 200000 && rawMsgs.some((m) => Array.isArray(m.content) && m.content.some((p) => p && p.type === 'image_url'));
+  let useVision = hasImage && cfg.llm.visionModel;
+  let messages = rawMsgs;
+  if (useVision && rawLen > 24000) {
+    useVision = false;
+    messages = rawMsgs.map((m) => Array.isArray(m.content)
+      ? { ...m, content: m.content.filter((p) => p && p.type === 'text').map((p) => p.text || '').join('\n') || '（材料过大，图片部分已省略，按正文继续）' }
+      : m);
+    console.log(`[SR] multimodal 材料过大（${rawLen} 字符）→ 视觉降级为文本模型`);
+  }
   const payload = {
     model: useVision ? cfg.llm.visionModel : cfg.llm.model,
-    messages: body.messages || [],
+    messages,
     stream,
     temperature: body.temperature ?? cfg.llm.temperature ?? 0.7,
   };

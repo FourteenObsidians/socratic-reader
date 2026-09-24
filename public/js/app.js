@@ -251,7 +251,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v45.8-思考占位';
+  SR.VERSION = 'v45.9-带读首轮修复';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#e3b34c;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
