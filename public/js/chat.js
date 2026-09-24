@@ -182,7 +182,9 @@ SR.chat = {
   },
   _focusScan(text) {
     const lines = text.split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {      // 从后往前找最新的完整标记行
+    /* 只扫“完整行”：跳过最后一行——流式时它还在生长，半个标记（@p8|Jasm…）
+       每个字符都会变 key，逐 delta 触发聚焦 = 当前文段疯狂闪烁 */
+    for (let i = lines.length - 2; i >= 0; i--) {
       const mk = this._parseMarker(lines[i]);
       if (!mk) continue;
       const key = lines[i].trim();

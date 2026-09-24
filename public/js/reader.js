@@ -318,6 +318,7 @@ SR.reader = {
     if (d.kind === 'epub') return this._epubFocus(from, to, quote, endQuote);
     const f = Math.max(1, Math.round(Number(from)) || 1);
     const t = Math.min(d.pages, Math.max(f, Math.round(Number(to)) || f));
+    clearTimeout(this._focusRetry); clearTimeout(this._focusTimer);   // 掐断上一轮重试/消退链，防叠加闪烁
     this._clearFocus();
     const mode = (SR.state.config && SR.state.config.focusMode) || 'flash';
     this.scrollToPage(f);                       // 先滚动（即时反馈 + 触发目标页渲染）
@@ -348,6 +349,11 @@ SR.reader = {
   /* EPUB 带读聚焦：跳到目标章 → 在章内 DOM 搜短语 → Range→CFI 常亮高亮；未命中只跳章 */
   async _epubFocus(from, to, quote, endQuote) {    const d = this.doc;
     const f = Math.max(1, Math.round(Number(from)) || 1);
+    clearTimeout(this._focusRetry); clearTimeout(this._focusTimer);   // 同上：掐断旧链再动 DOM
+    /* 同一目标+同一短语的重复调用（流式残响/徽章连点）直接忽略，避免拆装高亮闪烁 */
+    const sig = f + '|' + String(quote || '');
+    if (this._epubFocusSig === sig && this._epubFocusCfi) return;
+    this._epubFocusSig = sig;
     this._clearFocus();
     const mode = (SR.state.config && SR.state.config.focusMode) || 'flash';
     if (f - 1 !== (d.readPos || 1) - 1) { try { await d.rendition.display(f - 1); } catch { /* 跳章失败 */ } }
@@ -2001,6 +2007,10 @@ SR.reader = {
     try {
       const r = await SR.api('/api/bookmap?path=' + encodeURIComponent(d.path));
       d.bookmap = (r && r.nodes && r.nodes.length) ? r : null;
+      /* 旧版算法拆的书图（v45.5 之前：论文不细化、节点照抄节名）→ 提示重拆，下拉框才有细粒度节点 */
+      if (d.bookmap && (!d.bookmap.v || d.bookmap.v < 3) && this._bmPaperish()) {
+        SR.toast('🗺 这篇论文的书图是旧算法拆的（节点=Abstract/Methods 原文标题，无内容细化）——建议重新点「🗺 拆书」', 'info', 7000);
+      }
     } catch { d.bookmap = null; }
     this.refreshPartSelect();                          // 节点加载后进入选择器
     return d.bookmap;
@@ -2019,10 +2029,7 @@ SR.reader = {
     const d = this.doc;
     if (!d) { SR.toast('先打开一个文档'); return; }
     if (!d.outline.length && !d.parts.length) { SR.toast('此文档没有目录，无法拆书'); return; }
-    /* 论文型文档识别：目录标题命中学术 section 模式 → 走论文拆解（section 级内容感知细分 + 概括）
-       标题先归一化：剥掉 "1." "2.3" "II." "B." 等编号前缀（真实论文目录几乎都带编号，裸 ^ 匹配会全漏） */
-    const PAPER_SEC = /^(abstract|summary|introduction|background|related works?|preliminar(y|ies)|problem (formulation|statement|setting)|methods?|materials? and methods|methodology|approach|proposed (method|approach|framework|model)|(system|model|framework) (design|overview|architecture)|overview|experiments?|experimental (setup|results|protocol)|(evaluation|results)( and (analysis|discussion))?|analysis|ablation( stud(y|ies))?|discussion|conclusions?|limitations|future work|appendix|references|bibliography|acknowledg|摘要|引言|前言|相关工作|研究背景|问题(定义|提出|描述)|方法|材料与方法|模型|实验(与结果|设置|分析)?|结果(与分析)?|评估|讨论|结论(与展望)?|不足|展望|附录|参考文献|致谢)/i;
-    const paperish = (d.outline || []).filter((it) => PAPER_SEC.test(this._bmNormTitle(it.title))).length >= 3;
+    const paperish = this._bmPaperish();   // 论文型 → section 级内容感知细分（标题归一化在方法内）
     SR.toast('🗺 分层拆书：先按章，再看内容…', 'info', 2000);
     const pg = SR.progress('bookmap', `🗺 拆书 · ${d.title.slice(0, 18)}`);
     try {
@@ -2104,7 +2111,7 @@ SR.reader = {
           }
         }
       } catch { /* 元数据失败：链式兜底已就位 */ }
-      d.bookmap = { nodes: allNodes, generatedAt: Date.now(), v: 2,
+      d.bookmap = { nodes: allNodes, generatedAt: Date.now(), v: 3,
         chapters: chapters.map((c) => ({ title: c.title, from: c.from, to: c.to, summary: c.summary || '', srcOutline: !!c.outline })) };
       await SR.apiPut('/api/bookmap', { path: d.path, title: d.title, nodes: allNodes }).catch(() => {});
       this.renderBookmap();
@@ -2123,6 +2130,12 @@ SR.reader = {
     return String(s || '').trim()
       .replace(/^(?:(?:[0-9]+(?:\.[0-9]+)*[.)]?|[IVXLCDM]{1,5}[.)]?|[A-Za-z][.)]|\(\d+\)|[•·\-–—])\s+)+(?=\S)/, '')
       .replace(/\s+/g, ' ').trim();
+  },
+
+    /* 论文型文档识别（v45.5+）：标题归一化后命中学术节名 ≥3 → 论文拆解模式 */
+  _bmPaperish() {
+    const re = /^(abstract|summary|introduction|background|related works?|preliminar(y|ies)|problem (formulation|statement|setting)|methods?|materials? and methods|methodology|approach|proposed (method|approach|framework|model)|(system|model|framework) (design|overview|architecture)|overview|experiments?|experimental (setup|results|protocol)|(evaluation|results)( and (analysis|discussion))?|analysis|ablation( stud(y|ies))?|discussion|conclusions?|limitations|future work|appendix|references|bibliography|acknowledg|摘要|引言|前言|相关工作|研究背景|问题(定义|提出|描述)|方法|材料与方法|模型|实验(与结果|设置|分析)?|结果(与分析)?|评估|讨论|结论(与展望)?|不足|展望|附录|参考文献|致谢)/i;
+    return ((this.doc && this.doc.outline) || []).filter((it) => re.test(this._bmNormTitle(it.title))).length >= 3;
   },
 
   /* 章节层：目录顶层 → 确定性区间（滤废料），无目录时等宽分段 */
