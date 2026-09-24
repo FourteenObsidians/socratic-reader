@@ -1858,7 +1858,23 @@ SR.reader = {
     this.readalong.on = !this.readalong.on;
     document.getElementById('raProgressWrap').classList.toggle('hidden', !this.readalong.on);
     if (this.readalong.on) {
-      this.setGoal(this.currentPart() || d.parts[0]);
+      let g = this.currentPart() || d.parts[0];
+      /* 书图存在 → 目标自动细化：当前页所在的最细未打卡节点；该节点已打卡 → pos 之后
+         下一个未打卡节点（仍限所选部分范围内） */
+      const seq = this._bmSeq();
+      const pos = d.readPos || (g && g.from) || 1;
+      const dk = (id) => (d.partsDone || {})[id];
+      const inRange = (n) => n.from >= g.from - 2 && n.to <= g.to + 2;
+      let fine = null;
+      if (seq.length && g) {
+        const inNode = seq.find((n) => pos >= n.from && pos <= n.to);
+        if (inNode && !dk(inNode.id) && inRange(inNode)) fine = inNode;
+        else fine = seq.find((n) => n.from > pos && !dk(n.id) && inRange(n))    // 所选范围内顺延
+          || seq.find((n) => n.from > pos && !dk(n.id))                          // 范围内全完 → 全局顺延
+          || null;
+      }
+      this.setGoal(fine || g);
+      if (fine && fine.id !== g.id) SR.toast(`🎯 目标已细化：「${fine.title.slice(0, 18)}」(p.${fine.from}–${fine.to})`, 'info', 4000);
       SR.toast('🚶 陪读已开启：读完目标部分会提醒你复盘');
     } else {
       this.readalong.goal = null;
@@ -1875,6 +1891,8 @@ SR.reader = {
     this.readalong.bannerShownFor = null;
     const el = document.getElementById('raGoal');
     if (el) el.textContent = `🎯 ${part.title} (p.${part.from}–${part.to})`;
+    const sel = document.getElementById('partSelect');                     // 目标节点同步进选择器（UI 一致）
+    if (sel && this._partIdx && this._partIdx['bm:' + part.id]) sel.value = 'bm:' + part.id;
     this.updateRaProgress(this.doc ? this.doc.readPos : 1);
     SR.persist.save();
   },
@@ -1926,11 +1944,34 @@ SR.reader = {
     document.getElementById('reviewBanner').classList.add('hidden');
   },
 
+  /* 推进序列：书图节点（最细）优先，无书图退回目录 section */
+  _bmSeq() {
+    const d = this.doc;
+    if (!d) return [];
+    const nodes = ((d.bookmap && d.bookmap.nodes) || []).filter((n) => !this.isTrivialPart(n));
+    return nodes.length ? nodes : (d.parts || []);
+  },
+
+  /* 陪读推进：goal 是节点 → 序列里下一个未打卡；goal 是粗 section → 先降落到其页码范围内
+     第一个未打卡节点（范围内全完则跳过整段）；无书图时维持目录 section 顺序 */
   async nextPartAfter(part) {
     const d = this.doc;
-    if (!d || !d.parts.length) return null;
-    const i = d.parts.findIndex((p) => p.id === (part && part.id));
-    return d.parts[i + 1] || null;
+    const seq = this._bmSeq();
+    if (!seq.length) return null;
+    const done = (p) => (d.partsDone || {})[p.id];
+    const i = seq.findIndex((p) => p.id === (part && part.id));
+    if (i >= 0) {
+      for (let j = i + 1; j < seq.length; j++) if (!done(seq[j])) return seq[j];
+      return null;
+    }
+    /* 粗 section / 自定义段 / 无 goal：细化为范围内第一个未打卡节点 */
+    if (part && part.from && part.to) {
+      for (const p of seq) if (p.from >= part.from && p.from <= part.to && !done(p)) return p;
+      for (const p of seq) if (p.from > part.to && !done(p)) return p;   // 范围内全完 → 后续第一个未完
+      return null;
+    }
+    for (const p of seq) if (!done(p)) return p;                          // 无 goal：第一个未打卡
+    return null;
   },
 
   async advanceGoal() {
