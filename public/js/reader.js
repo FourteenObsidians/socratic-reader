@@ -1978,8 +1978,10 @@ SR.reader = {
     const d = this.doc;
     if (!d) { SR.toast('先打开一个文档'); return; }
     if (!d.outline.length && !d.parts.length) { SR.toast('此文档没有目录，无法拆书'); return; }
-    /* 论文型文档识别：目录标题命中学术 section 模式 → 走论文拆解（section 级内容感知细分 + 概括） */
-    const paperish = (d.outline || []).filter((it) => /^(abstract|introduction|background|related work|methods?|materials and methods|methodology|experiments?|experimental (setup|results)|results|evaluation|discussion|conclusions?|references|acknowledg)/i.test(String(it.title || '').trim())).length >= 3;
+    /* 论文型文档识别：目录标题命中学术 section 模式 → 走论文拆解（section 级内容感知细分 + 概括）
+       标题先归一化：剥掉 "1." "2.3" "II." "B." 等编号前缀（真实论文目录几乎都带编号，裸 ^ 匹配会全漏） */
+    const PAPER_SEC = /^(abstract|summary|introduction|background|related works?|preliminar(y|ies)|problem (formulation|statement|setting)|methods?|materials? and methods|methodology|approach|proposed (method|approach|framework|model)|(system|model|framework) (design|overview|architecture)|overview|experiments?|experimental (setup|results|protocol)|(evaluation|results)( and (analysis|discussion))?|analysis|ablation( stud(y|ies))?|discussion|conclusions?|limitations|future work|appendix|references|bibliography|acknowledg|摘要|引言|前言|相关工作|研究背景|问题(定义|提出|描述)|方法|材料与方法|模型|实验(与结果|设置|分析)?|结果(与分析)?|评估|讨论|结论(与展望)?|不足|展望|附录|参考文献|致谢)/i;
+    const paperish = (d.outline || []).filter((it) => PAPER_SEC.test(this._bmNormTitle(it.title))).length >= 3;
     SR.toast('🗺 分层拆书：先按章，再看内容…', 'info', 2000);
     const pg = SR.progress('bookmap', `🗺 拆书 · ${d.title.slice(0, 18)}`);
     try {
@@ -2074,6 +2076,14 @@ SR.reader = {
     }
   },
 
+  /* 目录标题归一化：剥编号/罗马数字/字母前缀（"2.3 Method" → "Method"，"III. Results" → "Results"）
+     前缀后必须跟空白才认定编号（防止罗马字符 I/V/X/M 与英文首字母重叠误杀） */
+  _bmNormTitle(s) {
+    return String(s || '').trim()
+      .replace(/^(?:(?:[0-9]+(?:\.[0-9]+)*[.)]?|[IVXLCDM]{1,5}[.)]?|[A-Za-z][.)]|\(\d+\)|[•·\-–—])\s+)+(?=\S)/, '')
+      .replace(/\s+/g, ' ').trim();
+  },
+
   /* 章节层：目录顶层 → 确定性区间（滤废料），无目录时等宽分段 */
   async _bmChapters() {
     const d = this.doc;
@@ -2104,8 +2114,8 @@ SR.reader = {
     tops.sort((a, b) => a.from - b.from);
     const dedup = tops.filter((t, i) => i === 0 || t.from > tops[i - 1].from);
     let use = dedup.filter((t) => !this.isTrivialPart({ ...t, to: t.from + 2 }));
-    /* 论文废料 section：参考文献/致谢/作者贡献 不值得节点（并入前节） */
-    use = use.filter((t) => !/^(references|bibliography|acknowledg|author contributions|conflicts? of interest|supplementary)/i.test(String(t.title || '').trim()));
+    /* 论文废料 section：参考文献/致谢/作者贡献 不值得节点（并入前节）——同样先剥编号前缀 */
+    use = use.filter((t) => !/^(references|bibliography|acknowledg|author contributions|conflicts? of interest|supplementary|参考文献|致谢|附录)/i.test(this._bmNormTitle(t.title)));
     if (use.length < 2) use = dedup;
     const chapters = [];
     if (use.length >= 2) {
