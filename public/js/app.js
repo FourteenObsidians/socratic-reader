@@ -251,7 +251,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v45.2-层次书图';
+  SR.VERSION = 'v45.3-论文拆解';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#e3b34c;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {

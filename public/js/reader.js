@@ -1963,11 +1963,14 @@ SR.reader = {
     const d = this.doc;
     if (!d) { SR.toast('先打开一个文档'); return; }
     if (!d.outline.length && !d.parts.length) { SR.toast('此文档没有目录，无法拆书'); return; }
+    /* 论文型文档识别：目录标题命中学术 section 模式 → 走论文拆解（section 级内容感知细分 + 概括） */
+    const paperish = (d.outline || []).filter((it) => /^(abstract|introduction|background|related work|methods?|materials and methods|methodology|experiments?|experimental (setup|results)|results|evaluation|discussion|conclusions?|references|acknowledg)/i.test(String(it.title || '').trim())).length >= 3;
     SR.toast('🗺 分层拆书：先按章，再看内容…', 'info', 2000);
     const pg = SR.progress('bookmap', `🗺 拆书 · ${d.title.slice(0, 18)}`);
     try {
       const chapters = await this._bmChapters();
       if (!chapters.length) { pg.fail('没有可用的章节边界（目录为空？）'); SR.toast('没有可用的章节边界（目录为空？）', 'error'); return; }
+      chapters.forEach((c) => { c.paper = paperish; });   // 论文标记传入章对象（采样/提示词/碎片合并都按此分流）
       const allNodes = [];
       let chIdx = 0;
       for (const ch of chapters) {
@@ -1979,15 +1982,17 @@ SR.reader = {
           pg.set((chIdx - 1) / chapters.length * 100, `📑 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」用目录小节（${subs.length} 节 · ${size} 页）`);
           secs = this._bmNormalize(subs, ch);
         }
-        if (!secs.length && size <= this.BM_MAX_NODE_PAGES) {
+        /* 论文型：section 再小也要按内容细拆（论文密度高，抄目录标题没价值） */
+        const minPages = paperish ? 0 : this.BM_MAX_NODE_PAGES;
+        if (!secs.length && size <= minPages) {
           pg.set((chIdx - 0.5) / chapters.length * 100, `📄 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」小章单节点（${size} 页）`);
           secs = [{ title: ch.title, from: ch.from, to: ch.to, src: ch.outline ? 'toc' : 'whole', reason: ch.subs && ch.subs.length ? ch.subs.join(' · ') : '' }];
         }
         if (!secs.length) {
-          pg.set((chIdx - 0.7) / chapters.length * 100, `🔍 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」采样 ${size} 页首行…`);
-          const sample = await this._bmSample(ch.from, ch.to);
+          pg.set((chIdx - 0.7) / chapters.length * 100, `🔍 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」采样 ${size} 页${paperish ? '全文' : '首行'}…`);
+          const sample = await this._bmSample(ch.from, ch.to, paperish);
           pg.set((chIdx - 0.4) / chapters.length * 100, `🤖 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」AI 找边界…`);
-          const raw = await this._bmSplitLLM(ch, sample);
+          const raw = await this._bmSplitLLM(ch, sample, paperish);
           secs = this._bmNormalize(raw, ch);
           if (!secs.length) {   // LLM 失败兜底：章只比阈值略大 → 整章单节点；真大章才等宽切
             if (size <= this.BM_MAX_NODE_PAGES * 1.3) {
@@ -2010,7 +2015,7 @@ SR.reader = {
         }));
         chapters[chIdx - 1].summary = ch.subs && ch.subs.length
           ? ch.subs.join(' / ')                       // 章摘要：目录二级直拼（零 AI，最可信）
-          : (secs.length > 1 ? secs.map((s) => s.title).join(' / ') : secs[0].reason || secs[0].title);
+          : (secs.length > 1 ? secs.map((s) => s.title).join(' / ') : (secs[0].reason && secs[0].src === 'llm' ? secs[0].reason : secs[0].title));
       }
       /* 章内链式 deps 兜底 */
       let prev = null;
@@ -2084,6 +2089,8 @@ SR.reader = {
     tops.sort((a, b) => a.from - b.from);
     const dedup = tops.filter((t, i) => i === 0 || t.from > tops[i - 1].from);
     let use = dedup.filter((t) => !this.isTrivialPart({ ...t, to: t.from + 2 }));
+    /* 论文废料 section：参考文献/致谢/作者贡献 不值得节点（并入前节） */
+    use = use.filter((t) => !/^(references|bibliography|acknowledg|author contributions|conflicts? of interest|supplementary)/i.test(String(t.title || '').trim()));
     if (use.length < 2) use = dedup;
     const chapters = [];
     if (use.length >= 2) {
@@ -2119,40 +2126,52 @@ SR.reader = {
     return uniq.filter((s) => s.to >= s.from).map((s) => ({ ...s, src: 'toc', reason: s.title }));
   },
 
-  /* 大章抽样：每页首行 ~110 字符（识别小节起始的线索足够，token 可控） */
-  async _bmSample(from, to) {
+  /* 章内抽样：full=true 逐页全文（论文 section 短小高密度）；否则每页首行 ~110 字符 */
+  async _bmSample(from, to, full) {
     const d = this.doc;
     const lines = [];
     const size = to - from + 1;
-    const step = Math.max(1, Math.ceil(size / 80));       // 最多采样 ~80 页
+    const step = full ? 1 : Math.max(1, Math.ceil(size / 80));       // 常规最多采 80 页；论文全抽
+    const cap = full ? 2000 : 110;
     if (d.kind === 'epub') {
       for (let p = from; p <= to; p += step) {
         try {
           const sec = d.book.spine.get(p - 1);
           if (!sec) continue;
           const doc = await sec.load(d.book.load.bind(d.book));
-          const t = this._epubDocText(doc).slice(0, 110);
+          const t = this._epubDocText(doc).slice(0, cap);
           if (t) lines.push(`p.${p}: ${t}`);
         } catch { /* 跳过 */ }
       }
-      return lines.join('\n');
+      return lines.join('\n').slice(0, 90000);
     }
     for (let p = from; p <= to; p += step) {
       try {
         const pg = await d.pdf.getPage(p);
         const tc = await pg.getTextContent();
-        const t = tc.items.map((i) => i.str).join(' ').replace(/\s+/g, ' ').trim().slice(0, 110);
+        const t = tc.items.map((i) => i.str).join(' ').replace(/\s+/g, ' ').trim().slice(0, cap);
         if (t) lines.push(`p.${p}: ${t}`);
       } catch { /* 跳过 */ }
     }
-    return lines.join('\n');
+    return lines.join('\n').slice(0, 90000);
   },
 
-  /* 大章 → LLM 按采样文本找小节边界 + 每节一句内容概括 */
-  async _bmSplitLLM(ch, sample) {
+  /* 章/section → LLM 找小节边界 + 每节内容概括；paper=true 用论文密度提示词 */
+  async _bmSplitLLM(ch, sample, paper) {
     if (!sample) return [];
     const d = this.doc;
-    const sys = `你是教材编辑。下面是一章的逐页首行采样（p.页码: 内容开头）。请把这一章拆成可独立带读的小节。
+    const size = ch.to - ch.from + 1;
+    const sys = paper
+      ? `你是科研论文阅读专家。下面是论文一个 section 的全文（p.页码: 内容）。把它拆成可独立精读的知识小块。
+要求：
+1. 论文信息密度高：每个小块 ${Math.max(2, Math.ceil(size / 6))} 页以内即可，宁小勿大——一个核心论点/方法步骤/实验发现一块；
+2. 标题【禁止】照抄 section 名（Abstract/Methods 这类）——用内容命名（如「Jasmine 的图聚类合并策略」「BND 断点聚类的两步流程」），让读者不看原文也知道这块讲什么；
+3. reason 一句话概括该块的具体内容（≤30 字，写实际信息：方法名/实验结论/关键数据，不写「介绍本章内容」）；
+4. 主题单一紧凑的短 section（如 Abstract）允许只输出 1 节——但标题和 reason 仍必须按内容写；
+5. from/to 为整数页码，必须落在 ${ch.from}..${ch.to} 内。
+只输出 JSON 数组，不要代码块不要解释，字符串内禁用英文双引号（用「」）：
+[{"title":"内容命名的小块","from":3,"to":5,"reason":"概括这块讲了什么具体内容"}]`
+      : `你是教材编辑。下面是一章的逐页首行采样（p.页码: 内容开头）。请把这一章拆成可独立带读的小节。
 要求：
 1. 每节 ${Math.max(6, Math.round(this.BM_MAX_NODE_PAGES * 0.6))}–${this.BM_MAX_NODE_PAGES} 页左右，在小节真正开始的地方切（从采样里能看出主题切换/新概念入场），不要机械等分；
 2. from/to 为整数页码，必须落在 ${ch.from}..${ch.to} 内；标题用该节实际讲的内容命名（≤16 字，不照抄页首文字）；
@@ -2160,7 +2179,7 @@ SR.reader = {
 4. 若采样显示本章其实主题单一紧凑，允许只输出 1 节。
 只输出 JSON 数组，不要代码块不要解释，字符串内禁用英文双引号（用「」）：
 [{"title":"小节名","from":10,"to":24,"reason":"一句话概括本节内容"}]`;
-    const user = `书名：${d.title}\n本章：${ch.title}（p.${ch.from}–${ch.to}，共 ${ch.to - ch.from + 1} 页）\n\n逐页采样：\n${sample}`;
+    const user = `书名：${d.title}\n本${paper ? ' section' : '章'}：${ch.title}（p.${ch.from}–${ch.to}，共 ${size} 页）\n\n${paper ? '全文' : '逐页采样'}：\n${sample}`;
     const r = await SR.apiPost('/api/llm/chat', { messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], stream: false, temperature: 0.2 });
     const secs = SRJsonFix.parseLLMJsonArray(r.content || '');
     return (Array.isArray(secs) ? secs : []).map((s) => ({ ...s, src: 'llm' }));
@@ -2197,16 +2216,17 @@ SR.reader = {
     }
     fixed[0].from = ch.from;
     fixed[fixed.length - 1].to = ch.to;
-    /* 碎片合并 */
+    /* 碎片合并（论文场景信息密度高，小块也有价值：不合并） */
+    const tiny = ch.paper ? 0 : this.BM_MERGE_TINY;
     const out = [];
     for (const s of fixed) {
-      if (out.length && s.to - s.from + 1 < this.BM_MERGE_TINY) {
+      if (out.length && tiny && s.to - s.from + 1 < tiny) {
         out[out.length - 1].to = s.to;
         continue;
       }
       out.push({ ...s });
     }
-    if (out.length > 1 && ch.to - out[out.length - 1].from + 1 < this.BM_MERGE_TINY) {
+    if (tiny && out.length > 1 && ch.to - out[out.length - 1].from + 1 < tiny) {
       out[out.length - 2].to = ch.to; out.pop();
     }
     return out.filter((s) => s.to >= s.from);
