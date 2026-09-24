@@ -1907,6 +1907,21 @@ SR.reader = {
     b.dataset.partId = part.id || '';
   },
 
+  /* 过关测验通过的确认闸门：打卡本部分 → 用户点确认才滚到下一目标 */
+  showGateBanner(ctx) {
+    const b = document.getElementById('reviewBanner');
+    if (!b) return;
+    const title = ctx.partTitle || '本部分';
+    document.getElementById('bannerText').textContent = `🧪 过关测验通过：「${title}」确认掌握 —— 进入下一部分？`;
+    b.classList.remove('hidden');
+    b.dataset.partId = ctx.partId || '';
+    b.dataset.advance = '1';
+    b.dataset.gate = '1';
+    /* 打卡（幂等）：过关即掌握 */
+    this.markPartDone(ctx.partId);
+    SR.toast('🧪 过关！已打卡本部分', 'success', 3000);
+  },
+
   hideBanner() {
     document.getElementById('reviewBanner').classList.add('hidden');
   },
