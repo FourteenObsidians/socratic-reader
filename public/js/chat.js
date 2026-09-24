@@ -511,7 +511,15 @@ SR.chat = {
     try {
       const acc = await SR.chatStream(msgs, {
         signal: this.abort.signal,
-        onDelta: (_, all) => {
+        onDelta: (_, all, think) => {
+          /* 推理模型的思考阶段（reasoning 无正文）：占位提示带计时，正文首字到达即替换 */
+          if (think || !all) {
+            if (!this._thinkT0) this._thinkT0 = Date.now();
+            const sec = Math.round((Date.now() - this._thinkT0) / 1000);
+            bubble.innerHTML = `<div class="think-note"><span class="think-dots"></span>🧠 深度思考中… ${sec}s<br><span class="dim">模型在通读材料、规划教学路径，首轮材料越大等待越久</span></div>`;
+            return;
+          }
+          this._thinkT0 = null;
           bubble.innerHTML = this.renderWithBadges(all);   // 流式徽章与历史徽章同一渲染路径，点击数据一致
           this._focusScan(all);
           const box = document.getElementById('chatMsgs');
@@ -520,6 +528,7 @@ SR.chat = {
       });
       s.messages.push({ role: 'assistant', content: acc });
       this._restoreTextMsg(s);   /* multimodal 发送完成 → 会话里换回占位文本（存储/渲染用） */
+      this._thinkT0 = null;
     } catch (e) {
       this._restoreTextMsg(s);
       if (e.name !== 'AbortError') {

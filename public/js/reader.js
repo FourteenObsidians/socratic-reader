@@ -2113,7 +2113,7 @@ SR.reader = {
       } catch { /* 元数据失败：链式兜底已就位 */ }
       d.bookmap = { nodes: allNodes, generatedAt: Date.now(), v: 3,
         chapters: chapters.map((c) => ({ title: c.title, from: c.from, to: c.to, summary: c.summary || '', srcOutline: !!c.outline })) };
-      await SR.apiPut('/api/bookmap', { path: d.path, title: d.title, nodes: allNodes }).catch(() => {});
+      await SR.apiPut('/api/bookmap', { path: d.path, title: d.title, nodes: allNodes, v: 3, chapters: d.bookmap.chapters }).catch(() => {});
       this.renderBookmap();
       this.refreshPartSelect();
       const big = chapters.filter((c) => c.to - c.from + 1 > this.BM_MAX_NODE_PAGES).length;

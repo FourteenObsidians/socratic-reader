@@ -567,8 +567,9 @@ async function llmChat(req, res) {
         if (data === '[DONE]') { write({ done: true }); continue; }
         try {
           const j = JSON.parse(data);
-          const delta = j.choices?.[0]?.delta?.content;
-          if (delta) write({ delta });
+          const dl = j.choices?.[0]?.delta || {};
+          if (dl.content) write({ delta: dl.content });
+          else if (dl.reasoning_content) write({ think: true });   // 推理阶段心跳：客户端显示"思考中"，不进正文
           if (j.usage) write({ usage: j.usage });
         } catch { /* 忽略不完整分片 */ }
       }
@@ -878,7 +879,9 @@ async function handleApi(req, res, url) {
     const abs = resolveInputPath(body.path);
     if (!abs || !Array.isArray(body.nodes)) return sendJSON(res, 400, { error: '参数不完整' });
     await writeJsonFile(bookmapFile(docIdOf(abs)), {
-      path: abs, title: body.title || path.basename(abs), nodes: body.nodes, generatedAt: Date.now(),
+      path: abs, title: body.title || path.basename(abs), nodes: body.nodes,
+      v: body.v || 2, chapters: Array.isArray(body.chapters) ? body.chapters : [],
+      generatedAt: Date.now(),
     });
     return sendJSON(res, 200, { ok: true });
   }

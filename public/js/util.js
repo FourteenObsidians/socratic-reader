@@ -229,6 +229,7 @@ SR.chatStream = async (messages, { onDelta, onDone, onError, signal } = {}) => {
           try { j = JSON.parse(line.slice(5).trim()); } catch { continue; }
           if (j.error) throw new Error(j.error);
           if (j.delta) { acc += j.delta; onDelta && onDelta(j.delta, acc); }
+          else if (j.think) onDelta && onDelta(null, acc, true);   // 推理心跳：无正文增量，提示层显示"思考中"
         }
       }
     }
