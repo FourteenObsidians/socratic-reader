@@ -2046,7 +2046,13 @@ SR.reader = {
         chIdx++;
         const size = ch.to - ch.from + 1;
         let secs = [];
-        const subs = await this._bmSubEntries(ch);
+        /* 论文尾部材料（图注/参考文献/数据可用性）：单节点直用，不进 LLM——
+           一张图一个节点即可，参考文献拆成"内容节点"纯属污染 */
+        if (ch.backmatter || ch.figure) {
+          pg.set((chIdx - 0.5) / chapters.length * 100, `${ch.figure ? '🖼' : '📎'} 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」${ch.figure ? '图表' : '尾部材料'}单节点（${size} 页）`);
+          secs = [{ title: ch.title, from: ch.from, to: ch.to, src: 'toc', reason: '' }];
+        }
+        const subs = ch.backmatter || ch.figure ? [] : await this._bmSubEntries(ch);
         if (subs.length >= 2) {
           pg.set((chIdx - 1) / chapters.length * 100, `📑 第${chIdx}/${chapters.length}章 「${ch.title.slice(0, 14)}」用目录小节（${subs.length} 节 · ${size} 页）`);
           secs = this._bmNormalize(subs, ch);
@@ -2172,15 +2178,23 @@ SR.reader = {
     tops.sort((a, b) => a.from - b.from);
     const dedup = tops.filter((t, i) => i === 0 || t.from > tops[i - 1].from);
     let use = dedup.filter((t) => !this.isTrivialPart({ ...t, to: t.from + 2 }));
-    /* 论文废料 section：参考文献/致谢/作者贡献 不值得节点（并入前节）——同样先剥编号前缀 */
-    use = use.filter((t) => !/^(references|bibliography|acknowledg|author contributions|conflicts? of interest|supplementary|参考文献|致谢|附录)/i.test(this._bmNormTitle(t.title)));
+    /* 论文尾部材料打标（不丢页：丢了会把参考文献页并进上一章，内容节点跟着跑偏）：
+       backmatter=参考文献/致谢/数据可用性等；figure=图注/表注（Figure 1: …）。
+       两类都保留为章，但生成时走"单节点直用"通道，不进 LLM 细拆 */
+    const BACK = /^(references|bibliography|acknowledg|data availability|author contributions|conflicts? of interest|supplementary|code availability|ethics|参考文献|致谢|数据可用性|补充材料|附录)/i;
+    const FIG = /^(figure|fig\.?|table|box|scheme)\s*\d|^图\s*\d|^表\s*\d/i;
+    for (const t of use) {
+      const nt = this._bmNormTitle(t.title);
+      if (BACK.test(nt)) t.backmatter = true;
+      else if (FIG.test(nt)) t.figure = true;
+    }
     if (use.length < 2) use = dedup;
     const chapters = [];
     if (use.length >= 2) {
       for (let i = 0; i < use.length; i++) {
         const from = use[i].from;
         const to = i + 1 < use.length ? Math.max(from, use[i + 1].from - 1) : d.pages;
-        if (to >= from) chapters.push({ title: use[i].title, from, to, outline: !!use[i].srcOutline, subs: use[i].subs || [] });
+        if (to >= from) chapters.push({ title: use[i].title, from, to, outline: !!use[i].srcOutline, subs: use[i].subs || [], backmatter: !!use[i].backmatter, figure: !!use[i].figure });
       }
     } else if (d.pages > 1) {
       const step = Math.max(10, Math.ceil(d.pages / 8));
@@ -2307,6 +2321,9 @@ SR.reader = {
         out[out.length - 1].to = s.to;
         continue;
       }
+      /* 论文模式：同页码区间的重复节点（单页 section 被 LLM 拆成 N 块，下拉里
+         N 行都是 "9–9页" 无法区分）→ 只留第一个 */
+      if (ch.paper && out.length && out[out.length - 1].from === s.from && out[out.length - 1].to === s.to) continue;
       out.push({ ...s });
     }
     if (tiny && out.length > 1 && ch.to - out[out.length - 1].from + 1 < tiny) {

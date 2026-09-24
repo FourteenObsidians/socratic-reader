@@ -940,8 +940,16 @@ async function handleApi(req, res, url) {
 }
 
 /* ---------------- 启动 ---------------- */
+const FAVICON = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><text y="24" font-size="24">📖</text></svg>',
+  'utf8',
+);
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.svg') {
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Content-Length': FAVICON.length, 'Cache-Control': 'public, max-age=86400' });
+    return res.end(FAVICON);
+  }
   Promise.resolve()
     .then(() => (url.pathname.startsWith('/api/') ? handleApi(req, res, url) : serveStatic(req, res, url.pathname)))
     .catch((e) => {
