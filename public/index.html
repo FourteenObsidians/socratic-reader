@@ -149,6 +149,7 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
     <div id="chatInputBar">
       <textarea id="chatInput" rows="2" placeholder="回答引导者的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
       <div class="input-actions">
+        <button id="btnPuzzle" class="ghost small" title="算法题偏好：点击切换 优先→自动→关闭（立即生效于下一条回复）">🧩 出题</button>
         <button id="btnStop" class="ghost small hidden">⏹ 停止</button>
         <button id="btnSend" class="primary small">发送</button>
       </div>

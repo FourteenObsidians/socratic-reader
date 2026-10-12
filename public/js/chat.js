@@ -570,8 +570,13 @@ SR.chat = {
     const memorySystem = (s.messages.length > 2 && lastUserText && !lastUserText.startsWith('【材料】'))
       ? await this.learningMemory(lastUserText)
       : '';
+    /* 出题偏好动态层：每条消息按当前配置剥旧贴新（改开关立刻生效，无需重开课） */
+    let sysBase = String(s.system || '')
+      .replace(/\n?## 算法题偏好（用户的私人爽点[\s\S]*?(?=\n## |$)/g, '');   // 剥掉旧层（含静态烘焙版）
+    const pz = this.puzzleLayer();
+    if (pz) sysBase += '\n' + pz;
     const msgs = [
-      { role: 'system', content: [s.system, extraSystem, memorySystem, langDirective].filter(Boolean).join('\n\n') },
+      { role: 'system', content: [sysBase, extraSystem, memorySystem, langDirective].filter(Boolean).join('\n\n') },
       ...s.messages,
     ];
     try {
@@ -651,15 +656,15 @@ SR.chat = {
     const v = (SR.state.prompts && SR.state.prompts.puzzleFirst) || 'auto';
     if (v === 'off') return '';
     const core = [
-      '\n## 算法题偏好（用户的私人爽点，优先级高于默认提问档）',
+      '\n## 算法题偏好（用户的私人爽点，优先级高于默认提问档）（动态层，可被替换）',
       '用户特别享受"把抽象机制当成算法题自己解出来"的过程。当材料中的机制/流程/判据可以抽象成一个有输入输出的小问题时——',
-      '- **优先端题而不是讲解（此条覆盖「开块讲解」的默认顺序）**：新块的机制离散可算时，本轮的形态就是一道题——像 LeetCode 题面那样端上来：背景一句 + 输入实例（数字/序列/小数据表）+ 约束（引用材料里的判据/参数）+ 求什么。【严禁】端题的同时把解法或答案讲出来——题就是这一轮的全部讲解，他做完题、你讲评时才展开机制。题面必须落在材料里这个机制本身，数字自己编但口径要能用手算。',
+      '- **优先端题而不是讲解（此条覆盖「开块讲解」的默认顺序）**：新块的机制离散可算时，本轮的形态就是一道题——像 LeetCode 题面那样端上来。【题面格式（硬性）】独立成段、三个加粗标记块：**规则**：判据/参数（引用材料原文口径）→ **输入**：具体数据（列表或表格，手算量级，含至少一个反直觉的陷阱实例）→ **求**：明确的输出物（一个数/一组判定/一个划分）。题面落在材料里这个机制本身。【严禁】端题的同时把解法或答案讲出来——题就是这一轮的全部讲解，他做完题、你讲评时才展开机制。',
       '- 顺序讲究：先给题让他做，做完讲评时才接机制讲解（讲评从他答案的对错接起）；他卡住给的提示也用题面变体（缩小输入/退化的平凡实例）而不是直接说答案。',
       '- 讲评后可以加一句"这就是刚才 X 的机制"完成回落——题目是手段，机制理解是目的。',
       '- 判定域窄：算法题必须有能对答案的输出（一组数/一个划分/一个判定），开放讨论题不算。题面与讲评里的数学表达式用规范 LaTeX（$...$ / $$...$$），公式漂亮是用户爽点的一部分。',
     ].join('\n');
     if (v === 'on') return core + '\n【强度】on：只要机制可抽象（有离散输入+规则+可判输出），就尽量出题；连续数学推导类不强求，但也优先找"手动模拟前两步"式的算题机会。';
-    return core + '\n【强度】auto：内容密度高、机制离散可算时出题；概念性/历史性内容正常讲解，不硬凑题。';
+    return core + '\n【强度】auto：默认积极——机制离散可算就出题（宁多勿少）；纯概念/历史/综述段落才正常讲解。';
   },
 
   personaLayer() {
@@ -796,7 +801,6 @@ SR.chat = {
     const system = [
       P.socratic,
       this.personaLayer(),
-      this.puzzleLayer(),
       '\n## 输出格式（硬性要求，放在一切之前）',
       '每次开始介绍新的一块，你的回复【第一行】必须是位置标记，格式（二选一）：',
       '① @p页码|开头短语→结尾短语   ← 优先用这个：高亮整块',
@@ -897,7 +901,6 @@ SR.chat = {
     const system = [
       P.socratic,
       this.personaLayer(),
-      this.puzzleLayer(),
       '\n## 当前任务：文献陪读复盘（文献阅读模式）',
       `用户刚读完《${d.title}》的第 ${part.from}–${part.to} 页（部分：${part.title}），主动发起复盘。`,
       memory,
@@ -942,7 +945,6 @@ SR.chat = {
     const system = [
       P.socratic,
       this.personaLayer(),
-      this.puzzleLayer(),
       '\n## 当前任务：选段研读',
       `用户在《${title}》第 ${page} 页选中了一段文字。请就这一段向用户提问：先澄清这段在讲什么（让用户用自己的话解释），再深入关键概念、假设与后果。一次只问一个问题，绝不直接讲解，除非用户明确说“没读懂/请解释”。`,
       memory,
@@ -975,7 +977,6 @@ SR.chat = {
     const system = [
       P.socratic,
       this.personaLayer(),
-      this.puzzleLayer(),
       '\n## 当前任务：自由探索学习',
       P.explore,
       `\n主题：${topic}\n用户自评水平：${level}`,
@@ -1311,7 +1312,6 @@ SR.chat = {
     return [
       P.socratic,
       this.personaLayer(),
-      this.puzzleLayer(),
       '\n## 当前任务：巩固复习（与学新知不同——这是检索练习）',
       '用户此前学过相关内容。你的职责不是讲授，而是检验与加固记忆：',
       '1. **先检索**：第一个问题就让用户凭记忆复述/解释目标知识点（不用看书，说出还记得什么）。用户答“不记得”也要温和接受，那正是复习的价值所在。',

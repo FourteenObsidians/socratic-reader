@@ -251,7 +251,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v46.5-公式渲染';
+  SR.VERSION = 'v46.6-出题开关';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#e3b34c;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -420,6 +420,29 @@ SR.zotero = {
   document.getElementById('btnStop').addEventListener('click', () => {
     if (SR.chat.abort) { try { SR.chat.abort.abort(); } catch {} }
   });
+  /* 🧩 出题开关：点击循环 优先→自动→关闭，存 config 并立即生效（stream 每条动态注入偏好层） */
+  const btnPuzzle = document.getElementById('btnPuzzle');
+  const renderPuzzleBtn = () => {
+    const v = (SR.state.prompts && SR.state.prompts.puzzleFirst) || 'auto';
+    const map = { on: ['🧩 出题：优先', 'primary small'], auto: ['🧩 出题：自动', 'ghost small'], off: ['🧩 出题：关', 'ghost small'] };
+    const [label, cls] = map[v] || map.auto;
+    btnPuzzle.textContent = label;
+    btnPuzzle.className = cls;
+    btnPuzzle.title = '算法题偏好：' + (v === 'on' ? '机制可抽象就出题（点击切到自动）' : v === 'auto' ? 'AI 视内容决定，默认积极（点击关闭）' : '不出题，常规提问（点击切到优先）');
+  };
+  btnPuzzle.addEventListener('click', async () => {
+    const cur = (SR.state.prompts && SR.state.prompts.puzzleFirst) || 'auto';
+    const next = cur === 'on' ? 'auto' : cur === 'auto' ? 'off' : 'on';
+    try {
+      const r = await SR.apiPost('/api/config', { puzzleFirst: next });
+      SR.state.config = Object.assign(SR.state.config || {}, r.config || {});
+      SR.state.prompts = Object.assign(SR.state.prompts || {}, { puzzleFirst: next });
+    } catch (e) { SR.toast('保存失败：' + e.message); }
+    renderPuzzleBtn();
+    const word = next === 'on' ? '优先出题——机制可抽象就端题' : next === 'auto' ? '自动（默认积极）' : '关闭出题';
+    SR.toast('🧩 ' + word + '（下一条回复生效）', 'info', 2600);
+  });
+  renderPuzzleBtn();
   document.getElementById('btnChatClear').addEventListener('click', () => SR.chat.clear());
   document.getElementById('btnExportChat').addEventListener('click', () => SR.chat.exportChat());   // 对话导出为 md（存 vault）
   /* 聊天气泡里选中文字 → 浮出 📖 速查按钮（带读岔题补课，不污染主会话） */
