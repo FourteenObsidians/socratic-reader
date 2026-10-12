@@ -38,6 +38,8 @@ const DEFAULT_CONFIG = {
   personaPath: '../.claude/agents/socratic-guide.md',
   // 陪读伙伴人格（classic | genki | scholar | challenger）
   personaStyle: 'classic',
+  // 算法题偏好（on=材料可抽象时优先把机制端成算法题让用户解 | auto=AI 视内容决定 | off=常规提问）
+  puzzleFirst: 'auto',
   // 带读聚焦模式（flash=高亮片刻淡出 | keep=常亮到下一块 | off=仅滚动不高亮）
   focusMode: 'flash',
   // Zotero 数据目录（留空则自动探测，如 /mnt/c/Users/<你>/Zotero 或 C:\\Users\\<你>\\Zotero）
@@ -895,6 +897,7 @@ async function handleApi(req, res, url) {
   if (p === '/api/prompts' && req.method === 'GET') {
     const pr = await getPrompts(cfg);
     pr.personaStyle = cfg.personaStyle || 'classic';
+    pr.puzzleFirst = cfg.puzzleFirst || 'auto';
     return sendJSON(res, 200, pr);
   }
 

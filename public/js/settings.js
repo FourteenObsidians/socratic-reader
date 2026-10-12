@@ -48,6 +48,7 @@ SR.settings = {
     document.getElementById('setPersona').value = c.personaPath;
     document.getElementById('setPersonaStyle').value = c.personaStyle || 'classic';
     document.getElementById('setFocusMode').value = c.focusMode || 'flash';
+    document.getElementById('setPuzzleFirst').value = c.puzzleFirst || 'auto';
     document.getElementById('setZoteroDir').value = c.zoteroDataDir || '';
     document.getElementById('testResult').textContent = '';
     this.checkVault();
@@ -89,6 +90,7 @@ SR.settings = {
       personaPath: document.getElementById('setPersona').value.trim(),
       personaStyle: document.getElementById('setPersonaStyle').value,
       focusMode: document.getElementById('setFocusMode').value,
+      puzzleFirst: document.getElementById('setPuzzleFirst').value,
       zoteroDataDir: document.getElementById('setZoteroDir').value.trim(),
       cards: {
         vaultSubdir: document.getElementById('setCardsDir').value.trim() || 'Cards',

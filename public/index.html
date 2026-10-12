@@ -266,6 +266,13 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
         <option value="off">🚫 不高亮（仅自动滚动）</option>
       </select>
     </label>
+    <label>算法题偏好（把材料中的机制/流程抽象成算法题端上来，你来解）
+      <select id="setPuzzleFirst">
+        <option value="on">🧩 优先出算法题（材料可抽象时尽量出题）</option>
+        <option value="auto">⚖️ 自动（AI 视内容密度决定）（默认）</option>
+        <option value="off">🚫 关闭（常规提问）</option>
+      </select>
+    </label>
     <h3>Zotero 联动</h3>
     <label>Zotero 数据目录（留空 = 自动探测；含 storage/ 与 zotero.sqlite 的那个文件夹）
       <input id="setZoteroDir" placeholder="自动探测，如 /mnt/c/Users/你/Zotero 或 C:\Users\你\Zotero">
