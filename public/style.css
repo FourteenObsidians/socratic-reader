@@ -624,3 +624,9 @@ body.debug-hl .hl { outline: 2px solid #ff5252; opacity: .8; }
 .tc-relbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 10px; border-top: 1px dashed var(--border); }
 .tc-relhint { font-size: 10.5px; color: var(--muted); }
 .tc-relbtn { font-size: 10.5px; }
+
+/* KaTeX 公式（聊天气泡 / 速查卡 / 归档条目通用） */
+.katex { font-size: 1.03em; }
+.msg .katex, .tc-answer .katex { font-size: 1.05em; }
+.katex-display { margin: .55em 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.katex-display > .katex { white-space: nowrap; }

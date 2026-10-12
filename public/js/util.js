@@ -83,9 +83,24 @@ SR.copyText = async (text) => {
 SR.fmtTime = (ts) => new Date(ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 SR.debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
-/* ---------- 极简 Markdown 渲染（先转义，安全优先） ---------- */
+/* ---------- 极简 Markdown 渲染（先转义，安全优先；KaTeX 公式） ---------- */
+SR.tex = (tex, display) => {
+  try {
+    return window.katex.renderToString(tex, { displayMode: !!display, throwOnError: false, strict: false });
+  } catch { return SR.esc(tex); }
+};
 SR.md = (src) => {
-  let s = SR.esc(src ?? '');
+  let s = String(src ?? '');
+  /* 公式先行提取（在转义与 Markdown 变换之前，防止 _ * \ 被吃）：
+     支持 $$…$$、\[...\]（display）与 $…$、\(...\)（inline） */
+  const maths = [];
+  const stash = (tex, display) => { maths.push(SR.tex(tex, display)); return `\u0000M${maths.length - 1}\u0000`; };
+  s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_, t) => stash(t, true))
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, t) => stash(t, true))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, t) => stash(t, false))
+    .replace(/\$([^\s$][^$\n]*?[^\s$])\$/g, (_, t) => stash(t, false))
+    .replace(/\$([^\s$])\$/g, (_, t) => stash(t, false));
+  s = SR.esc(s);
   const blocks = [];
   s = s.replace(/```([\w-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
     blocks.push(`<pre><code>${code}</code></pre>`);
@@ -109,9 +124,11 @@ SR.md = (src) => {
     const t = para.trim();
     if (!t) return '';
     if (/^<(h\d|ul|blockquote|pre|hr)/.test(t)) return t;
+    if (/^\u0000M\d+\u0000$/.test(t)) return t;   // 独立成段的公式：不加 <p>（display 层级合法）
     return `<p>${t.replace(/\n/g, '<br>')}</p>`;
   }).join('\n');
   s = s.replace(/\u0000B(\d+)\u0000/g, (_, i) => blocks[Number(i)]);
+  s = s.replace(/\u0000M(\d+)\u0000/g, (_, i) => maths[Number(i)]);
   return s;
 };
 
