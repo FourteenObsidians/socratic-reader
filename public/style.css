@@ -617,3 +617,10 @@ body.debug-hl .hl { outline: 2px solid #ff5252; opacity: .8; }
 .think-note .dim { font-size: 11px; opacity: .75; }
 .think-dots { display: inline-block; width: 10px; margin-right: 6px; animation: thinkpulse 1.1s ease-in-out infinite; }
 @keyframes thinkpulse { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+
+/* 速查卡归档按钮与相关概念连点条 */
+.tc-archive { white-space: nowrap; }
+.tc-archive:disabled { opacity: .6; }
+.tc-relbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 10px; border-top: 1px dashed var(--border); }
+.tc-relhint { font-size: 10.5px; color: var(--muted); }
+.tc-relbtn { font-size: 10.5px; }

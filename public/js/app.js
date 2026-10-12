@@ -251,7 +251,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v46.2-活人感';
+  SR.VERSION = 'v46.3-速查归档';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#e3b34c;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {

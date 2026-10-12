@@ -367,7 +367,8 @@ SR.chat = {
         SR.el('button', { class: 'ghost small', title: parentTerm ? `关掉这张，回到「${parentTerm}」的卡片` : '关掉回到带读（主对话不受影响）', onclick: () => this.closeTermCard() }, '✕')),
       thread,
       SR.el('div', { class: 'tc-bar' }, input,
-        SR.el('button', { class: 'primary small', onclick: send }, '追问')),
+        SR.el('button', { class: 'primary small', onclick: send }, '追问'),
+        SR.el('button', { class: 'ghost small tc-archive', title: '把这张卡沉淀为 Obsidian 概念条目（自动入学习 Wiki 关系网）', onclick: () => this.archiveTermCard(T) }, '📁 归档')),
       SR.el('div', { class: 'tc-foot' },
         parentTerm ? `解释里的新词可选中再开卡 · ✕ 回到「${parentTerm}」` : '解释里的新词可选中再开一张卡 · 带读未受影响'));
     document.body.appendChild(card);
@@ -442,6 +443,71 @@ SR.chat = {
 
   closeAllTermCards() {
     while (this._termStack && this._termStack.length) this.closeTermCard();
+  },
+
+  /* ===== 速查卡归档：对话 → 结构化概念条目 → Obsidian（概念条目 + 学习Wiki 关系网） ===== */
+  async archiveTermCard(T) {
+    if (!T || T.archiving) return;
+    if (!T.messages || !T.messages.length) { SR.toast('卡片还没有内容，先问点什么再归档'); return; }
+    T.archiving = true;
+    const btn = T.el && T.el.querySelector('.tc-archive');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 提取中…'; }
+    const s = SR.state.session;
+    const ctx = s && s.context ? `《${s.context.title}》${s.context.partTitle ? ' · ' + s.context.partTitle : ''}` : '';
+    try {
+      /* 1) LLM 从速查对话提取结构化条目（含相关概念清单，供 wikilink 与连点建卡） */
+      const sys = [
+        '你是知识库编辑。下面是一段「名词速查卡」对话（用户在阅读中查询一个名词）。把它沉淀为一个可长期检索的 Obsidian 概念条目。',
+        '只输出 JSON 对象，不要代码块不要解释，字符串内禁用英文双引号（用「」）：',
+        '{"title":"概念名（≤24字，与查询词一致或更规范）","aliases":["别名/英文原名"],"oneLine":"一句话核心（检索到就知道它是什么，≤60字）","sections":[{"h":"小节名","body":"内容（定义边界/机制推理链/具体例子/失效条件，markdown）"}],"related":[{"name":"相关概念名","rel":"上位/并列/组件/对比/前置","why":"一句话关系"}],"source":"出处（书名/部分，从语境推断）"}',
+        '要求：内容必须来自对话本身（速查卡里怎么解释的就怎么沉淀，不额外发挥）；related 挑 2-5 个对话中真实出现的概念；body 里的关键术语用 [[wikilink]]。',
+      ].join('\n');
+      const conv = T.messages.map((m) => (m.role === 'user' ? '用户：' : '速查卡：') + m.content).join('\n\n').slice(0, 12000);
+      const r = await SR.apiPost('/api/llm/chat', { messages: [{ role: 'system', content: sys }, { role: 'user', content: `${ctx ? '阅读语境：' + ctx + '\n\n' : ''}查询名词：${T.term}\n\n对话记录：\n${conv}` }], stream: false, temperature: 0.2 });
+      let e = {};
+      try { e = JSON.parse(SRJsonFix.parseLLMJsonArray('[' + (r.content || '').replace(/^\s*\{/, '').replace(/\}\s*$/, '') + ']')[0] || '{}'); } catch { /* 兜底：无结构化也能存原文 */ }
+      if (!e.title) e.title = T.term;
+      /* 2) 拼 Obsidian md（YAML 可被 Dataview 捕获；wikilink 进关系网） */
+      const now = new Date().toISOString().replace('T', ' ').slice(0, 16);
+      const fm = [
+        '---', 'type: concept', `title: ${e.title}`,
+        (e.aliases && e.aliases.length) ? 'aliases: [' + e.aliases.slice(0, 4).join(', ') + ']' : '',
+        `created: ${now}`, 'tags: [概念条目, 苏格拉底阅读器]',
+        e.source ? `source: ${e.source}` : (ctx ? `source: ${ctx}` : ''),
+        '---', '',
+      ].filter(Boolean).join('\n');
+      const body = (e.sections && e.sections.length ? e.sections.map((x) => `## ${x.h}\n\n${x.body}`).join('\n\n') : T.messages.filter((m) => m.role === 'assistant').map((m) => m.content).join('\n\n'));
+      const relBlock = (e.related && e.related.length) ? [
+        '## 相关概念', '',
+        ...e.related.map((x) => `- [[${x.name}]]（${x.rel || '相关'}）——${x.why || ''}`),
+        '',
+      ].join('\n') : '';
+      const md = [fm, `# ${e.title}`, '', `> [!abstract] ${e.oneLine || ''}`, '', body, '', relBlock,
+        '## 来源对话', '', `${ctx || '阅读中'} · 名词速查 · ${now}`, ''].join('\n');
+      /* 3) 写入 vault：概念条目目录 + 学习 Wiki 索引（服务端对缺失 wikilink 自动建占位条目） */
+      const saved = await SR.apiPost('/api/notes/save', { subdir: '概念条目', filename: e.title, content: md, linkMissing: true });
+      await SR.apiPost('/api/wiki/upsert', { entry: { id: e.title, link: e.title, oneLine: e.oneLine || '', topics: ['概念条目'].concat((e.related || []).map((x) => x.name).slice(0, 5)), type: '概念速查', source: e.source || ctx || '' } }).catch(() => {});
+      if (btn) { btn.textContent = '✅ 已归档'; }
+      SR.toast(`📁 已归档「${e.title}」→ ${saved.rel}（相关概念已连入 Wiki 索引）`, 'success', 5000);
+      /* 4) 相关概念连点：一键为 related 里的概念批量建速查卡（逐个查+归档） */
+      if (e.related && e.related.length && T.el) {
+        const bar = SR.el('div', { class: 'tc-relbar' },
+          SR.el('span', { class: 'tc-relhint' }, '相关概念：'),
+          ...e.related.slice(0, 5).map((x) => SR.el('button', {
+            class: 'ghost small tc-relbtn',
+            title: (x.why || '') + '（点击开速查卡，满意可同样归档）',
+            onclick: () => this.openTermCard(x.name, { parent: T }),
+          }, `${x.rel || '?'} ${x.name}`)));
+        const foot = T.el.querySelector('.tc-foot');
+        if (foot) T.el.insertBefore(bar, foot);
+      }
+      T.archived = true;
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = '📁 归档'; }
+      SR.toast('归档失败：' + (err.message || err), 'error', 4000);
+    } finally {
+      T.archiving = false;
+    }
   },
 
   /* 选中文字 → 浮出 📖 小按钮（带读气泡 / PDF / 速查卡内皆可；parentCard 存在则为递归层） */

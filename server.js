@@ -835,7 +835,39 @@ async function handleApi(req, res, url) {
     await ensureDir(dir);
     const base = safeName(body.filename || body.title || '未命名', '未命名');
     const file = path.join(dir, `${base}.md`);
-    await fsp.writeFile(file, String(body.content || ''), 'utf8');
+    let content = String(body.content || '');
+    /* 概念条目互链：正文里的 [[链接目标]] 若同目录尚无对应 md → 生成占位条目（渐进学习：
+       占位=待探索标记，用户按概念笔记模板填充；不加这步 wikilink 全是死链） */
+    if (body.linkMissing === true) {
+      const links = [...content.matchAll(/\[\[([^\]\|#]+)/g)].map((m) => m[1].trim()).filter(Boolean);
+      for (const rel of [...new Set(links)].slice(0, 12)) {
+        const target = path.join(dir, `${safeName(rel, '概念')}.md`);
+        if (fs.existsSync(target)) continue;
+        const stub = [
+          '---',
+          'type: concept-stub',
+          `title: ${rel}`,
+          `created: ${new Date().toISOString().replace('T', ' ').slice(0, 16)}`,
+          'tags: [概念条目, 待填充]',
+          '来源: 苏格拉底阅读器·名词速查归档',
+          '---',
+          '',
+          `# ${rel}`,
+          '',
+          `> [!abstract] 占位条目`,
+          `> 由「${safeName(body.filename || body.title || '未命名', '未命名')}」归档时自动创建——速查对话中提到它与主概念相关。填充它，或暂时留作知识地图上的待探索节点。`,
+          '',
+          '## 定义',
+          '（待补）',
+          '',
+          '## 相关',
+          `[[${safeName(body.filename || body.title || '未命名', '未命名')}]]`,
+          '',
+        ].join('\n');
+        await fsp.writeFile(target, stub, 'utf8');
+      }
+    }
+    await fsp.writeFile(file, content, 'utf8');
     return sendJSON(res, 200, { ok: true, path: file, rel: path.relative(vault, file), obsidianUrl: `obsidian://open?path=${encodeURIComponent(file)}` });
   }
   if (p === '/api/notes/search' && req.method === 'GET') {
