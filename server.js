@@ -878,6 +878,22 @@ async function handleApi(req, res, url) {
     const hits = await searchNotes(vault, q.get('q') || '', Number(q.get('limit') || 30), q.get('subdir') || '');
     return sendJSON(res, 200, { vault, hits });
   }
+  if (p === '/api/notes/get' && req.method === 'GET') {
+    /* 按文件名取笔记全文（AI 按需索取 ?note[[名]] 的落地端）：精确 basename 优先，模糊包含兜底 */
+    const vault = vaultAbs(cfg);
+    if (!vault || !fs.existsSync(vault)) return sendJSON(res, 200, { found: false, error: 'vault 未配置' });
+    const name = String(q.get('name') || '').trim();
+    if (!name) return sendJSON(res, 200, { found: false, error: '缺少 name' });
+    let best = null;
+    for await (const file of walkNotes(vault)) {
+      const base = path.basename(file, '.md');
+      if (base === name) { best = file; break; }
+      if (!best && base && (base.includes(name) || name.includes(base))) best = file;
+    }
+    if (!best) return sendJSON(res, 200, { found: false });
+    const content = String(await fsp.readFile(best, 'utf8')).slice(0, 8000);
+    return sendJSON(res, 200, { found: true, path: best, rel: path.relative(vault, best), content });
+  }
   if (p === '/api/wiki/upsert' && req.method === 'POST') {
     const body = await readJSON(req);
     const vault = vaultAbs(cfg);

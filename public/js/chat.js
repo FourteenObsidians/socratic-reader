@@ -163,8 +163,41 @@ SR.chat = {
     const box = document.getElementById('chatMsgs');
     box.innerHTML = '';
     if (!s) return this.clear();
-    s.messages.forEach((m, i) => box.appendChild(this.msgEl(m, i)));
+    s.messages.forEach((m, i) => { if (!m.injected) box.appendChild(this.msgEl(m, i)); });
     box.scrollTop = box.scrollHeight;
+  },
+
+  /* ---- 按需取全文（知识库 tool-call 手搓版）----
+     AI 回复中出现 ?note[[条目名]] / ?pages[N] / ?pages[N-M] → 拦截：
+     从 vault / 会话存档取原文 → 以注入消息补进上下文 → 自动续写。
+     注入消息带 injected 标记：不渲染、不占界面，只进模型上下文。 */
+  async _onDemandCont(s, acc) {
+    const marks = [];
+    let cleaned = acc;
+    cleaned = cleaned.replace(/\?note\[\[([^\]\n]{1,80})\]\]/g, (_, n) => { marks.push({ kind: 'note', name: n.trim() }); return ''; });
+    cleaned = cleaned.replace(/\?pages\[(\d+)(?:-(\d+))?\]/g, (_, a, b) => { marks.push({ kind: 'pages', from: +a, to: +(b || a) }); return ''; });
+    if (!marks.length) return null;
+    const bits = [];
+    for (const mk of marks.slice(0, 2)) {
+      if (mk.kind === 'note') {
+        try {
+          const r = await SR.api('/api/notes/get?name=' + encodeURIComponent(mk.name));
+          bits.push(r.found
+            ? `【知识库条目 [[${mk.name}]]】（${r.rel}）
+${r.content}`
+            : `【知识库条目 [[${mk.name}]]】未找到——vault 里没有这个文件名的笔记。基于已有上下文继续，不要编造该条目内容。`);
+        } catch (e) { bits.push(`【知识库条目 [[${mk.name}]]】读取失败：${e.message}`); }
+      } else {
+        const full = s._matFull;
+        if (!full) { bits.push('【材料原文】本会话未存档原文，无法取页。'); continue; }
+        const pages = [];
+        const re = /\[p\.(\d+)\]\n?([\s\S]*?)(?=\n\[p\.|$)/g;
+        let m;
+        while ((m = re.exec(full))) { const pn = +m[1]; if (pn >= mk.from && pn <= mk.to) pages.push(`[p.${pn}]\n${m[2].trim()}`); }
+        bits.push(pages.length ? `【材料原文 p.${mk.from}${mk.to > mk.from ? '–' + mk.to : ''}】\n${pages.join('\n\n')}` : `【材料原文 p.${mk.from}】没有这一页。`);
+      }
+    }
+    return { cleaned, inject: bits.join('\n\n') };
   },
 
   /* 带读联动：扫描流式文本中的位置标记（行完整后才触发）。
@@ -536,6 +569,7 @@ SR.chat = {
     const s = SR.state.session;
     if (!s) { SR.toast('请先开启一个对话（复盘 / 选段提问 / 自由探索）'); return; }
     if (!text || !text.trim() || this.busy) return;
+    s._odDepth = 0;                       // 用户主动发话 → 按需续写深度清零
     /* 挂起的圈图优先走 multimodal */
     if (this._imgAsk) { await this._sendImgAsk(text.trim()); return; }
     s.messages.push({ role: 'user', content: text.trim() });
@@ -569,7 +603,38 @@ SR.chat = {
       : '【输出语言】无论阅读材料、图表或用户使用什么语言，你必须全程用简体中文作答；专业术语、代码、图表标签可在括号里保留英文原文，引用原文时保留原文。';
     const memorySystem = (s.messages.length > 2 && lastUserText && !lastUserText.startsWith('【材料】'))
       ? await this.learningMemory(lastUserText)
-      : '';
+      : this._kbProtoOnly();
+    /* ---- 上下文经济（B 层）---- */
+    /* ① 材料压缩：第 4 轮答完后，【材料】消息替换为逐页骨架（原文存 _matFull 供 ?pages 取回）。
+       早轮不压——AI 还在产 @p 锚定短语，需要逐字原文 */
+    const matIdx = s.messages.findIndex((m) => typeof m.content === 'string' && m.content.startsWith('【材料】'));
+    if (matIdx >= 0 && !s._matFull) {
+      const c = s.messages[matIdx].content;
+      if (c.length > 6000) s._matFull = c;   // 存档原文（只存一次；短材料不值得压）
+    }
+    const asstCount = s.messages.filter((m) => m.role === 'assistant' && !m.injected).length;
+    if (matIdx >= 0 && s._matFull && asstCount >= 4 && !s._matFolded) {
+      const pages = [];
+      const re = /\[p\.(\d+)\]\n?([\s\S]*?)(?=\n\[p\.|$)/g;
+      let m;
+      while ((m = re.exec(s._matFull))) pages.push(`[p.${m[1]}] ${m[2].trim().slice(0, 260)}`);
+      s.messages[matIdx] = { role: 'user', content: '【材料·骨架】原文已压缩（每页前 260 字）。需要某页原文锚定时用 ?pages[N] 或 ?pages[N-M] 取。\n\n' + pages.join('\n') };
+      s._matFolded = true;
+    }
+    /* ② 历史滚动摘要：只压"请求副本"，不动 s.messages（界面完整保留）。
+       中段（跳过材料+最早 2 轮+最近 6 轮）压缩成问答要点 */
+    let histMsgs = s.messages;
+    if (s.messages.length > 26) {
+      const head = s.messages.slice(0, 5);
+      const tail = s.messages.slice(-8);
+      const mid = s.messages.slice(5, -8);
+      const digest = mid.map((m) => {
+        const t = String(typeof m.content === 'string' ? m.content : '').replace(/\s+/g, ' ').trim();
+        if (!t) return '';
+        return (m.role === 'user' ? '用户答：' : '引导者：') + t.slice(0, m.role === 'user' ? 140 : 110);
+      }).filter(Boolean).join('\n');
+      histMsgs = [...head, { role: 'user', injected: true, content: '【历史摘要】以下为中途对话的要点压缩（原文已省，最近几轮为原文）：\n' + digest }, ...tail];
+    }
     /* 出题偏好动态层：每条消息按当前配置剥旧贴新（改开关立刻生效，无需重开课） */
     let sysBase = String(s.system || '')
       .replace(/\n?## 算法题偏好（用户的私人爽点[\s\S]*?(?=\n## |$)/g, '');   // 剥掉旧层（含静态烘焙版）
@@ -579,7 +644,7 @@ SR.chat = {
     const texDirective = '【公式排版】数学内容一律规范 LaTeX，前端用 KaTeX 渲染：行内 $...$、独立公式 $$...$$。包括：变量与参数（$T = 600$、$\\eta$）、区间/坐标（$[9000,\\ 15000]$）、集合（$\\{0, 300, 700\\}$）、运算与比较（$d(x,y) \\le T$、$\\sum_i \\mathrm{AF}_i$）、上下标（$w_{t+1}$）。【严禁】Unicode 拼凑（x²、∑、≤、≥、×、→ 单独出现）——比较符写 $\\le$、箭头写 $\\to$。算法题的规则、数据、求解里同样遵守（表格单元格内也用 LaTeX）。散文里的普通名词不带 $。';
     const msgs = [
       { role: 'system', content: [sysBase, extraSystem, memorySystem, langDirective, texDirective].filter(Boolean).join('\n\n') },
-      ...s.messages,
+      ...histMsgs,
     ];
     try {
       const acc = await SR.chatStream(msgs, {
@@ -600,7 +665,11 @@ SR.chat = {
         },
       });
       if (!acc || !acc.trim()) throw new Error('模型未返回内容（推理耗尽或上游空响应）——请再试一次，或到 ⚙ 设置调大 max tokens');
+      /* 按需取全文：拦截 ?note/?pages 标记 → 剥离存储 → 收尾后注入续写 */
+      const od = await this._onDemandCont(s, acc);
+      if (od) acc = od.cleaned;
       s.messages.push({ role: 'assistant', content: acc });
+      s._odPending = od || null;
       this._restoreTextMsg(s);   /* multimodal 发送完成 → 会话里换回占位文本（存储/渲染用） */
       this._thinkT0 = null;
     } catch (e) {
@@ -621,6 +690,17 @@ SR.chat = {
       if (ex && s.messages && s.messages.length) ex.classList.remove('hidden');
       this._detectGatePass(s);          // 过关测验宣言检测 → 确认进入下一部分
       SR.persist.save();
+      /* 按需续写：资料已注入 → 自动再流一轮让模型接着讲（深度≤2 防失控循环） */
+      const od = s._odPending; s._odPending = null;
+      if (od && od.inject) {
+        s._odDepth = (s._odDepth || 0) + 1;
+        if (s._odDepth <= 2) {
+          s.messages.push({ role: 'user', injected: true, content: od.inject + '\n\n（系统注入——资料已附上，接着你刚才未完成的内容继续，不要重复已说的部分。）' });
+          await this.stream();
+        } else {
+          SR.toast('按需取资料连续超过 2 层，已停——需要更多请再发一条消息', 'info', 3600);
+        }
+      }
     }
   },
 
@@ -1003,22 +1083,26 @@ SR.chat = {
 
   /* 学习 Wiki 检索：开新课时把“用户已经知道什么”注入系统上下文。
      只检索索引文件，避免把历史对话全文塞进模型。 */
-  async learningMemory(query) {
+  /* 知识库协议头（无检索命中/首轮材料消息时也常驻——AI 随时可索取） */
+  _kbProtoOnly() {
     const cfg = SR.state.config || {};
     if (!cfg.vaultPath) return '';
+    return '\n## 知识库接入（Obsidian vault）\n你可以在回复里用标记向系统索取资料，索取到后自动续写：\n- `?note[[条目名]]` —— 取 vault 里该文件名的笔记全文\n- `?pages[12]` 或 `?pages[12-14]` —— 取当前材料第 N 页/段的原文（材料多轮后会压缩成骨架，需要原文锚定时就取）\n标记写在需要处、随后立即停止本轮其余内容；系统会把资料注入后让你继续。不要在一条回复里索取超过 2 个。';
+  },
+
+  async learningMemory(query) {
+    const cfg = SR.state.config || {};
+    const proto = '\n## 知识库接入（Obsidian vault）\n你可以在回复里用标记向系统索取资料，索取到后自动续写：\n- `?note[[条目名]]` —— 取 vault 里该文件名的笔记全文（用户归档过的概念/总结都在库里）\n- `?pages[12]` 或 `?pages[12-14]` —— 取当前材料第 N 页/段的原文（材料在多轮后会被压缩成骨架，讲到某块需要原文锚定时就取）\n标记写在需要处、随后立即停止本轮其余内容；系统会把资料注入后让你继续。不确定条目是否存在时也可以试探（未找到会被告知）。不要在一条回复里索取超过 2 个。';
+    if (!cfg.vaultPath) return proto;
     const q = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-    if (!q) return '';
+    if (!q) return proto;
     try {
-      const subdir = (cfg.learning && cfg.learning.wikiSubdir) || '学习Wiki';
-      const r = await SR.api('/api/notes/search?q=' + encodeURIComponent(q) + '&limit=6&subdir=' + encodeURIComponent(subdir));
+      const r = await SR.api('/api/notes/search?q=' + encodeURIComponent(q) + '&limit=6');
       const hits = (r.hits || []).filter((h) => /\.md$/i.test(h.file || h.rel || ''));
-      if (!hits.length) return '';
-      return [
-        '\n## 用户已学知识（来自学习 Wiki 索引检索）',
-        '以下是用户以前学过并归档的知识线索，代表已知基础而非当前材料事实。利用它们承接、对比或检验；不确定相关时不要硬套。',
-        ...hits.map((h) => `- ${h.snippet}`),
-      ].join('\n');
-    } catch { return ''; }
+      const seen = new Set(); const uniq = hits.filter((h) => { const k = h.rel || h.file; if (seen.has(k)) return false; seen.add(k); return true; });
+      if (!uniq.length) return proto;
+      return proto + '\n\n### 用户已学知识（vault 检索命中）\n以下是用户笔记里的命中线索（文件 · 命中行），代表已知基础而非当前材料事实；利用它们承接、对比或检验，需要全文就 ?note[[文件名]]：\n' + uniq.map((h) => `- [[${String(h.rel || h.file).replace(/\.md$/i, '')}]]：${h.snippet}`).join('\n');
+    } catch { return proto; }
   },
 
   summaryKindOf(s) {
