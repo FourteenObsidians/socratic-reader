@@ -575,8 +575,10 @@ SR.chat = {
       .replace(/\n?## 算法题偏好（用户的私人爽点[\s\S]*?(?=\n## |$)/g, '');   // 剥掉旧层（含静态烘焙版）
     const pz = this.puzzleLayer();
     if (pz) sysBase += '\n' + pz;
+    /* 公式排版指令：与语言指令同级，每条消息强制注入（旧会话刷新后立即生效，不靠开课时烘焙） */
+    const texDirective = '【公式排版】数学内容一律规范 LaTeX，前端用 KaTeX 渲染：行内 $...$、独立公式 $$...$$。包括：变量与参数（$T = 600$、$\\eta$）、区间/坐标（$[9000,\\ 15000]$）、集合（$\\{0, 300, 700\\}$）、运算与比较（$d(x,y) \\le T$、$\\sum_i \\mathrm{AF}_i$）、上下标（$w_{t+1}$）。【严禁】Unicode 拼凑（x²、∑、≤、≥、×、→ 单独出现）——比较符写 $\\le$、箭头写 $\\to$。算法题的规则、数据、求解里同样遵守（表格单元格内也用 LaTeX）。散文里的普通名词不带 $。';
     const msgs = [
-      { role: 'system', content: [sysBase, extraSystem, memorySystem, langDirective].filter(Boolean).join('\n\n') },
+      { role: 'system', content: [sysBase, extraSystem, memorySystem, langDirective, texDirective].filter(Boolean).join('\n\n') },
       ...s.messages,
     ];
     try {
