@@ -1433,8 +1433,7 @@ SR.reader = {
       SR.el('div', { class: 'tr-dst' }, '…'));
     document.body.appendChild(card);
     /* 定位：贴选区下方；越界翻到上方 */
-    const box = document.getElementById('readerBox') || document.body;
-    const r = (s.rect || (s.pages[0] && s.pages[0].rect)) || box.getBoundingClientRect();
+    const r = (s.rect || (s.pages[0] && s.pages[0].rect)) || { left: 120, bottom: 160 };
     card.style.left = Math.max(10, Math.min(window.innerWidth - 460, (r.left || 0) + 10)) + 'px';
     card.style.top = Math.max(10, Math.min(window.innerHeight - 240, (r.bottom || 100) + 10)) + 'px';
     this._trEl = card;
