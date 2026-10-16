@@ -216,13 +216,13 @@ SR.persist = {
 };
 
 /* ---------- LLM 流式对话 ---------- */
-SR.chatStream = async (messages, { onDelta, onDone, onError, signal } = {}) => {
+SR.chatStream = async (messages, { onDelta, onDone, onError, signal, translate } = {}) => {
   let acc = '';
   try {
     const res = await fetch('/api/llm/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, stream: true }),
+      body: JSON.stringify({ messages, stream: true, translate: !!translate }),
       signal,
     });
     if (!res.ok) {

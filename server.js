@@ -27,6 +27,8 @@ const DEFAULT_CONFIG = {
     maxTokens: 0,   // 0 = 不限制（推理模型的思考 token 也计入 max_tokens，设小会导致正文被思考挤空）
     // 视觉模型（可选）：带图消息自动路由到这里（如 glm-4v-flash / gpt-4o-mini / qwen-vl-plus）
     visionModel: '',
+    // 翻译模型（可选）：划段翻译 🌐 专用（如 glm-4-flash / glm-4.5-flash；留空 = 主力模型）
+    translateModel: '',
     // Agent 输出语言：zh=简体中文（默认），en=English
     agentLang: 'zh',
   },
@@ -533,11 +535,16 @@ async function llmChat(req, res) {
       : m);
     console.log(`[SR] multimodal 材料过大（${rawLen} 字符）→ 视觉降级为文本模型，已剥离图片部件`);
   }
+  /* 翻译路由：前端 translate 标志 → 独立翻译模型（cfg.llm.translateModel，留空回落主力） */
+  const isTranslate = body.translate === true;
+  const trModel = (isTranslate && cfg.llm.translateModel && String(cfg.llm.translateModel).trim())
+    ? String(cfg.llm.translateModel).trim()
+    : null;
   const payload = {
-    model: useVision ? cfg.llm.visionModel : cfg.llm.model,
+    model: trModel || (useVision ? cfg.llm.visionModel : cfg.llm.model),
     messages,
     stream,
-    temperature: body.temperature ?? cfg.llm.temperature ?? 0.7,
+    temperature: isTranslate ? 0.2 : (body.temperature ?? cfg.llm.temperature ?? 0.7),
   };
   if (cfg.llm.maxTokens) payload.max_tokens = cfg.llm.maxTokens;
   let up;

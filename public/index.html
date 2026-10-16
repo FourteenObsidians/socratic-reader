@@ -165,6 +165,7 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
   <button data-act="copy" title="复制文本">📋</button>
   <button data-act="ask"  title="就这段向我提问">💬</button>
   <button data-act="note" title="高亮 + 笔记">📝</button>
+  <button data-act="translate" title="划段翻译：中→英 / 英→中，术语保留，译文可存为批注">🌐</button>
 </div>
 <div id="colorPalette" class="hidden"></div>
 <!-- 批注管理浮条（点击高亮块弹出） -->
@@ -226,6 +227,9 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
     </label>
     <label>视觉模型（可选，处理带图消息）
       <input id="setVisionModel" list="modelList" placeholder="留空=不支持图表；如 glm-4v-flash">
+    </label>
+    <label>翻译模型（可选，划段翻译 🌐 用；留空=主力模型）
+      <input id="setTranslateModel" list="modelList" placeholder="留空=主力模型；如 glm-4-flash / glm-4.5-flash">
     </label>
     <label>Agent 输出语言
       <select id="setAgentLang" style="width:140px">

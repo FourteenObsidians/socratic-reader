@@ -1404,8 +1404,62 @@ SR.reader = {
       this.hidePop();
       SR.chat.openTermCard(s.text, { page: firstPage });
       return;
+    } else if (act === 'translate') {
+      /* 划段翻译：译文浮层贴选区下方，原文/译文对照，可存为批注 */
+      this.translateSelection(s, tbAnchor);
+      return;
     }
     window.getSelection().removeAllRanges();
+  },
+
+  /* ===== 划段翻译：选区 → 译文浮层（对照+存批注+复制），独立翻译模型 ===== */
+  async translateSelection(s, anchor) {
+    if (this._trEl) { this._trEl.remove(); this._trEl = null; }
+    const src = String(s.text || '').trim();
+    if (!src) return;
+    const MAX = 4000;
+    const clipped = src.length > MAX;
+    const text = clipped ? src.slice(0, MAX) : src;
+    const firstPage = s.pages[0].page;
+
+    /* 语向自动判断：中文占比高 → 译英（辅助读外文文献时反向查证），否则 → 译中 */
+    const zh = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+    const toZh = zh / Math.max(1, text.replace(/\s/g, '').length) < 0.3;
+    const card = SR.el('div', { class: 'tr-card' },
+      SR.el('div', { class: 'tr-head' },
+        SR.el('span', { class: 'tr-title' }, `🌐 ${toZh ? '译中' : '译英'}${clipped ? `（前 ${MAX} 字）` : ''}`),
+        SR.el('button', { class: 'ghost small', title: '关闭', onclick: () => { card.remove(); this._trEl = null; } }, '✕')),
+      SR.el('div', { class: 'tr-src' }, text),
+      SR.el('div', { class: 'tr-dst' }, '…'));
+    document.body.appendChild(card);
+    /* 定位：贴选区下方；越界翻到上方 */
+    const box = document.getElementById('readerBox') || document.body;
+    const r = (s.rect || (s.pages[0] && s.pages[0].rect)) || box.getBoundingClientRect();
+    card.style.left = Math.max(10, Math.min(window.innerWidth - 460, (r.left || 0) + 10)) + 'px';
+    card.style.top = Math.max(10, Math.min(window.innerHeight - 240, (r.bottom || 100) + 10)) + 'px';
+    this._trEl = card;
+
+    const dst = card.querySelector('.tr-dst');
+    try {
+      const sys = toZh
+        ? '你是学术翻译。把用户给的英文（或其它外文）段落译成流畅的简体中文。要求：学术论文/教材语境，术语准确且首次出现时在括号里保留英文原文（如：结构变异（structural variant, SV)）；数字、符号、变量、引用标记原样保留；不增不减不解释；人名保留原文。只输出译文。'
+        : '你是学术翻译。把用户给的中文段落译成流畅的学术英文。要求：术语准确（用领域标准译法）；数字、符号、变量、引用标记原样保留；不增不减不解释。只输出译文。';
+      const acc = await SR.chatStream([{ role: 'system', content: sys }, { role: 'user', content: text }], {
+        onDelta: (_d, all) => { dst.textContent = all; },
+        translate: true,
+      });
+      dst.textContent = acc;
+      /* 操作条：存为批注（译文写进 note）/ 复制译文 */
+      const bar = SR.el('div', { class: 'tr-bar' },
+        SR.el('button', { class: 'ghost small', title: '把译文存进这条选区的批注（原文=高亮文本，译文写入笔记）', onclick: () => {
+          const ann = this.addHighlight(s.pages, s.text, firstPage, '#90caf9', `🌐 ${acc.trim()}`);
+          if (ann) SR.toast('译文已存为批注（蓝色高亮 + 🌐 前缀）');
+        } }, '💾 存为批注'),
+        SR.el('button', { class: 'ghost small', onclick: () => SR.copyText(acc.trim()) }, '📋 复制译文'));
+      card.appendChild(bar);
+    } catch (e) {
+      dst.innerHTML = `<b style="color:var(--red)">翻译失败：</b>${SR.esc(e.message)}`;
+    }
   },
 
   /* ===== 目录 ===== */
