@@ -6,6 +6,12 @@ SR.setMode = function (m) {
   SR.state.mode = m;
   document.body.classList.remove('mode-library', 'mode-reader', 'mode-explore');
   document.body.classList.add('mode-' + m);
+  if (m === 'reader') {
+    /* 进入/回到文档视图 → 退出 AI 全屏（否则 ⛶ 全屏后侧栏列宽压成 0，打开新文档侧栏不回来） */
+    document.body.classList.remove('ai-full');
+    const bf = document.getElementById('btnAiFull');
+    if (bf) { bf.textContent = '⛶'; bf.title = 'AI 面板全屏（不看原文、专心对话）'; }
+  }
   document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
   const show = (id, on) => document.getElementById(id).classList.toggle('hidden', !on);
   show('viewLibrary', m === 'library' && !SR.state.mdPath);
@@ -251,7 +257,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v47.10-EPUB目录自动切';
+  SR.VERSION = 'v47.11-侧栏恢复';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#d97757;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
