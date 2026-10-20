@@ -327,7 +327,7 @@ body.mode-explore #main { grid-template-columns: 280px 1fr minmax(460px, 38vw); 
 }
 #pageIndicator { color: var(--muted); font-size: 12.5px; min-width: 64px; text-align: center; }
 
-#pdfScroll { flex: 1; overflow: auto; background: var(--pdf-desk); min-height: 0; }
+#pdfScroll { flex: 1; overflow: auto; background: var(--pdf-desk); min-height: 0; position: relative; }
 /* 暗色模式：PDF 页面反色成"黑底白字"（只反 canvas 位图，不碰高亮/批注/选区层）。
    hue-rotate(180deg) 把反色后的色相转回原位——高亮彩色不变诡异色调 */
 :root:not([data-theme="light"]) .page canvas { filter: invert(92%) hue-rotate(180deg); }
