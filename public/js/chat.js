@@ -413,6 +413,7 @@ ${r.content}`
     }
     card.style.zIndex = 96 + depth;
     T.el = card;
+    SR.draggable(card, card.querySelector('.tc-head'));   /* 标题栏拖动，不挡正文 */
     /* 卡片内选中文字 → 递归再开一张（术语链向下生长） */
     card.addEventListener('mouseup', () => {
       setTimeout(() => {

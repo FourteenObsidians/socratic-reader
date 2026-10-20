@@ -83,6 +83,48 @@ SR.copyText = async (text) => {
 SR.fmtTime = (ts) => new Date(ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 SR.debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
+/* ---------- 浮动卡拖拽（通用）：handle 按住拖动 el ----------
+   3px 阈值内算点击（✕ 等按钮不受影响）；交互控件不触发拖拽；
+   拖动时置顶、夹在视口内；right/bottom 定位的卡拖过自动换算 left/top。 */
+SR.draggable = (el, handle) => {
+  if (!el || !handle) return;
+  let startX = 0, startY = 0, baseL = 0, baseT = 0, moved = false, dragging = false, savedZ = '';
+  const interactive = (t) => t && t.closest && t.closest('button, input, textarea, select, a, [contenteditable]');
+  const onDown = (ev) => {
+    if (ev.button !== undefined && ev.button !== 0) return;          // 只认主键
+    if (interactive(ev.target)) return;
+    const r = el.getBoundingClientRect();
+    startX = ev.clientX; startY = ev.clientY;
+    baseL = r.left; baseT = r.top;
+    moved = false; dragging = true;
+    const onMove = (e2) => {
+      if (!dragging) return;
+      const dx = e2.clientX - startX, dy = e2.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < 3) return;                  // 点击容差
+      if (!moved) {
+        moved = true;
+        el.style.right = 'auto'; el.style.bottom = 'auto';
+        savedZ = el.style.zIndex || '';
+        el.style.zIndex = 1000;
+        el.classList.add('dragging');
+      }
+      const w = r.width, h = r.height;
+      el.style.left = Math.max(8 - w * 0.7, Math.min(window.innerWidth - w * 0.3, baseL + dx)) + 'px';
+      el.style.top = Math.max(4, Math.min(window.innerHeight - 34, baseT + dy)) + 'px';
+      e2.preventDefault();
+    };
+    const onUp = () => {
+      dragging = false;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      if (moved) { el.style.zIndex = savedZ; el.classList.remove('dragging'); }
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  };
+  handle.addEventListener('pointerdown', onDown);
+};
+
 /* ---------- 极简 Markdown 渲染（先转义，安全优先；KaTeX 公式） ---------- */
 SR.tex = (tex, display) => {
   try {

@@ -638,3 +638,8 @@ body.debug-hl .hl { outline: 2px solid #ff5252; opacity: .8; }
 .tr-card .tr-src { max-height: 88px; overflow-y: auto; color: var(--muted); font-size: 12px; border-left: 2px solid var(--border, #3a3f47); padding-left: 8px; margin-bottom: 8px; white-space: pre-wrap; }
 .tr-card .tr-dst { white-space: pre-wrap; line-height: 1.62; min-height: 40px; }
 .tr-card .tr-bar { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border, #3a3f47); }
+
+/* 浮动卡可拖拽：标题栏抓手 + 拖动态 */
+.tc-head, .tr-head, .nc-head { cursor: grab; user-select: none; }
+.dragging { box-shadow: 0 14px 40px rgba(0,0,0,.55) !important; opacity: .97; }
+.dragging .tc-head, .dragging .tr-head, .dragging .nc-head { cursor: grabbing; }
