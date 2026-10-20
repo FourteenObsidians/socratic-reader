@@ -282,7 +282,9 @@ SR.reader = {
   },
 
   currentPage() {
-    const d = this.doc, scroll = this.scroll;
+    const d = this.doc;
+    if (d && d.kind === 'epub') return d.readPos || 1;   // EPUB：章号即页码（spine 索引+1），iframe 无 .page 元素
+    const scroll = this.scroll;
     const top = scroll.scrollTop + 90;
     let cur = 1;
     scroll.querySelectorAll('.page').forEach((p) => { if (p.offsetTop <= top) cur = Number(p.dataset.page); });
@@ -1555,14 +1557,9 @@ SR.reader = {
       body: { 'padding': '0 6px' },
       '::selection': { 'background': 'rgba(255,213,79,.45)' },
     });
-    /* 翻页：容器左右半屏点击（epub.js 内置）+ 键盘 */
-    const keyHandler = (e) => {
-      if (!SR.state.doc || SR.state.doc.kind !== 'epub') return;
-      if (e.key === 'ArrowRight' || e.key === 'PageDown') rendition.next();
-      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') rendition.prev();
-    };
-    document.addEventListener('keyup', keyHandler);
-    this._epubKeyCleanup = () => document.removeEventListener('keyup', keyHandler);
+    /* 键盘翻页：由全局 keydown（app.js）统一走 scrollToPage → rendition.display；
+       此处不再重复绑定，否则一次按键触发两次（keydown 翻章 + keyup 又 rendition.next） */
+    this._epubKeyCleanup = null;
     /* 位置变化：维护 readPos（=spine 索引+1）+ 陪读 tick + 工具条收起 */
     rendition.on('relocated', (loc) => {
       const idx = (loc && loc.start && Number.isFinite(loc.start.index)) ? loc.start.index : 0;
