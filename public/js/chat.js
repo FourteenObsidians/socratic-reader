@@ -865,6 +865,56 @@ ${r.content}`
     this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【正文（可能截断）】\n${mat.text.slice(0, 40000)}\n\n【我的批注（读时标注的关注点，优先围绕它们拷问）】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n【输出格式契约（最高优先级）】\n你的回复第一行必须严格是这一行（单独成行，页码和短语替换为实际值）：\n@p页码|开头短语→结尾短语\n开头短语逐字复制本轮分析段落第一句的开头 8–20 个英文字符；结尾短语逐字复制其最后一句的结尾 8–20 个英文字符（段落很短时可省略箭头和结尾短语）。\n例如本轮分析第 25 页起的三段，以 “Embeddings are the foundation...” 开始、以 “…become geometric ones.” 结束，第一行就是：\n@p25|Embeddings are the foundation→become geometric ones\n此行用于界面定位并高亮，缺失或范围对不上会让高亮文不对题。第二行起才是你的分析与提问。\n\n现在开始 WIT 精读：骨架 → 第一个拷问问题。`, mat.images || []);
   },
 
+  /* ---------- 框架优先精读：先搭全貌、用户导航、卡住才缝补（不逐问、不从 intro 起） ---------- */
+  async startFrameReading(partArg) {
+    const d = SR.state.doc;
+    if (!d) { SR.toast('请先打开一个 PDF'); return; }
+    const part = partArg || SR.reader.currentPart();
+    if (!part) { SR.toast('请先框选一个部分（下拉选择或自定义页码段）'); return; }
+    const pg = SR.progress('material', `📥 提取材料 · ${part.title.slice(0, 16)}（p.${part.from}–${part.to}）`);
+    pg.set(20, '逐页提取文本…');
+    const mat = await SR.reader.getPartMaterial(part);
+    if (!mat.text) { pg.fail('该部分没有可提取的文本（扫描件？）'); SR.toast('该部分没有可提取的文本（扫描件？）', 'error'); return; }
+    pg.set(mat.images && mat.images.length ? 80 : 100, mat.images && mat.images.length ? '截取图表页…' : '');
+    pg.done(`已提取 ${(mat.text.length / 1000).toFixed(1)}k 字${mat.highlights.length ? ' · 批注 ' + mat.highlights.length + ' 条' : ''}`, 1800);
+    const memory = await this.learningMemory(`${d.title} ${part.title}`);
+    const system = [
+      '你是一位「框架优先」的论文导读伙伴。你的读法跟传统顺序阅读不同：',
+      '',
+      '## 核心原则：先给全貌，再让用户导航，绝不牵着用户走',
+      '用户不要被一个接一个的问题推着走——那会让他失去全局感、产生抗拒。你的任务是先把整篇论文的框架一次搭起来，之后他指哪你看哪，遇到缝再补。你不是导游，是拿着地图走在他旁边的同行者。',
+      '',
+      '## 第一轮：框架搭建（只给地图，一个问题都不问）',
+      '读完材料，一次性输出这张「论文地图」：',
+      '1. **要解决什么**：一句话——不是领域背景，是它具体想做成的那件事；',
+      '2. **怎么解决**：核心方法/模型的骨架（一句话 + 关键公式或图/表编号，不展开推导）；',
+      '3. **得到什么**：最重要的发现（1–3 条，每条锚定图/表编号）；',
+      '4. **改变了什么**：结论与贡献，一句话；',
+      '5. **怎么深入读**：建议的阅读路线——通常「先看方法怎么用 → 再看关键图 → 最后才补背景」，明确说 Introduction 的铺垫可以放最后、甚至跳过。',
+      '然后停在这里，等用户挑方向。【严禁】框架轮抛任何问题、【严禁】写「那我们先看第一点吧」式引导、【严禁】把框架又拆成一问一答。',
+      '',
+      '## 之后每一轮：用户导航，你跟进',
+      '- 用户指哪，你深入哪——哪怕顺序不合常规（他先看图 4 再问方法，就顺着他）；',
+      '- 深入某一点时，用「给你一个工具 → 用它解决 → 撞到边界 → 修正」的方式讲清，讲完就停；',
+      '- 不预设问题链、不追问、不铺垫下一问；用户没说话就不动；',
+      '- 用户在框架理解中发现的矛盾/漏洞（「这里跟前面说的对不上」），你针对性补——缝补的问题由他发起，不由你制造；',
+      '- 他卡住真的需要方向时，只给「这里有几个口子可以进：…」的选项清单，把选择权留给他，不替他选。',
+      '',
+      '## 风格',
+      '- 说人话、有知性温度；数学表达式一律规范 LaTeX；',
+      '- 深入某段正文时，回复第一行给位置标记：@p页码|开头短语→结尾短语（短语逐字复制该段开头/结尾 8–20 个英文字符或 5–12 个汉字，禁止含 | 和 →）；框架轮、纯对话轮可省略标记。',
+      '\n## 当前任务：框架优先精读《' + d.title + '》第 ' + part.from + '–' + part.to + ' 页（部分：' + part.title + '）',
+      memory,
+    ].join('\n');
+    const context = {
+      brief: `🗺 ${SR.esc(d.title)} · p.${part.from}–${part.to}（${SR.esc(part.title)}）`,
+      file: d.path, from: part.from, to: part.to, title: d.title, partTitle: part.title,
+      text: mat.text, highlights: mat.highlights,
+    };
+    this.newSession('frame', `🗺 ${d.title} · 框架优先`, context, system);
+    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【正文（可能截断）】\n${mat.text.slice(0, 40000)}\n\n【我的批注（读时标注的关注点）】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n现在开始：第一轮只输出「论文地图」，一个问题都不问，然后停住等我导航。`, mat.images || []);
+  },
+
   async startGuidedReading(partArg) {
     const d = SR.state.doc;
     if (!d) { SR.toast('请先打开一个 PDF'); return; }
@@ -1109,7 +1159,7 @@ ${r.content}`
   },
 
   summaryKindOf(s) {
-    if (s.mode === 'guide' || s.mode === 'wit' || s.mode === 'part') return 'part';
+    if (s.mode === 'guide' || s.mode === 'wit' || s.mode === 'frame' || s.mode === 'part') return 'part';
     if (s.mode === 'review') return 'review';
     return 'explore';
   },
@@ -1156,9 +1206,9 @@ ${r.content}`
     const target = document.getElementById('sumTarget');
     ta.value = '生成中…';
     document.getElementById('sumOpen').classList.add('hidden');
-    const isPart = kind === 'part' && (s.mode === 'part' || s.mode === 'guide' || s.mode === 'wit') && s.context && s.context.text;
+    const isPart = kind === 'part' && (s.mode === 'part' || s.mode === 'guide' || s.mode === 'wit' || s.mode === 'frame') && s.context && s.context.text;
     const isReview = s.mode === 'review';
-    document.getElementById('sumTitle').textContent = isPart ? (s.mode === 'guide' ? '🎧 带读总结' : s.mode === 'wit' ? '🔬 WIT 精读纪要' : '📝 重点总结 · 部分复盘') : (isReview ? '🧠 巩固记录' : '📝 探索纪要');
+    document.getElementById('sumTitle').textContent = isPart ? (s.mode === 'guide' ? '🎧 带读总结' : s.mode === 'wit' ? '🔬 WIT 精读纪要' : s.mode === 'frame' ? '🗺 框架精读纪要' : '📝 重点总结 · 部分复盘') : (isReview ? '🧠 巩固记录' : '📝 探索纪要');
     let userMsg = '';
     if (isPart) {
       const c = s.context;
@@ -1373,7 +1423,7 @@ ${r.content}`
       a.href = r.obsidianUrl;
       a.classList.remove('hidden');
       // 陪读打卡：复盘/带读完成 → 标记该部分，并提示下一个目标
-      if (this._sumMeta && this._sumMeta.kind === 'part' && (s.mode === 'part' || s.mode === 'guide' || s.mode === 'wit') && s.context && s.context.partId) {
+      if (this._sumMeta && this._sumMeta.kind === 'part' && (s.mode === 'part' || s.mode === 'guide' || s.mode === 'wit' || s.mode === 'frame') && s.context && s.context.partId) {
         SR.reader.markPartDone(s.context.partId);
         if (SR.reader.readalong.on) {
           const next = await SR.reader.nextPartAfter({ id: s.context.partId });
