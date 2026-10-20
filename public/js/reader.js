@@ -1609,6 +1609,20 @@ SR.reader = {
     try { if (d && d.rendition) d.rendition.destroy(); } catch { /* 已销毁 */ }
   },
 
+  /* 激活侧栏指定 tab（EPUB 打开有目录时自动切到「目录」） */
+  _activateSideTab(tab) {
+    try {
+      const btn = document.querySelector(`.side-tab[data-tab="${tab}"]`);
+      if (!btn) return;
+      document.querySelectorAll('.side-tab').forEach((x) => x.classList.toggle('active', x === btn));
+      const want = 'panel' + tab[0].toUpperCase() + tab.slice(1);
+      for (const id of ['panelFiles', 'panelZotero', 'panelToc', 'panelMap', 'panelAnnots']) {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('hidden', id !== want);
+      }
+    } catch { /* 忽略 */ }
+  },
+
   async buildOutline() {
     const d = this.doc;
     if (d.kind === 'epub') {
@@ -1627,6 +1641,7 @@ SR.reader = {
       };
       renderItems(toc, 0);
       if (!panel.children.length) panel.appendChild(SR.el('div', { class: 'hint pad' }, '此 EPUB 没有内嵌目录；可按章选择部分。'));
+      else this._activateSideTab('toc');   // 有目录 → 自动切到「目录」tab（打开即见，不用手动点）
       return;
     }
     let ol = null;
