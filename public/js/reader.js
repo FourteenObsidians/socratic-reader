@@ -68,6 +68,7 @@ SR.reader = {
     await this.loadBookmap().catch((e) => console.warn('[SR] loadBookmap 失败', e));
     safe('renderAnnotsList', () => this.renderAnnotsList());
     safe('renderBookmap', () => this.renderBookmap());
+    safe('flowHud', () => this._flowHud());
     SR.persist.save();
     setTimeout(() => this.scrollToPage(Math.min(SR.state.doc.readPos || 1, pdf.numPages), 'auto'), 350);
     this.saveAnnDebounced();
@@ -1525,6 +1526,7 @@ SR.reader = {
     await this.loadBookmap().catch((e) => console.warn('[SR] loadBookmap 失败', e));
     safe('renderAnnotsList', () => this.renderAnnotsList());
     safe('renderBookmap', () => this.renderBookmap());
+    safe('flowHud', () => this._flowHud());
     SR.persist.save();
     this.saveAnnDebounced();
     /* 圈图/缩放对 EPUB 无意义：按钮就地禁用提示 */
@@ -2049,10 +2051,100 @@ SR.reader = {
     if (!d || !partId) return;
     d.partsDone = d.partsDone || {};
     d.partsDone[partId] = { at: Date.now() };
+    this._logStreak();                                  // 🔥 连续打卡
     this.saveAnnDebounced();
     SR.persist.save();
     this.renderBookmap();
+    this._flowHud();
+    this._milestone(partId);                            // 章节完成的优雅庆祝
     this.refreshPartSelect();                          // 选择器里的 ✅ 同步
+  },
+
+  /* ===== 心流引擎：streak / 进度环 / 里程碑 ===== */
+  _today() {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  },
+  _streakLog() {
+    try { return JSON.parse(localStorage.getItem('sr_streak') || '[]'); } catch { return []; }
+  },
+  _logStreak() {
+    const log = this._streakLog();
+    const t = this._today();
+    if (!log.includes(t)) { log.push(t); localStorage.setItem('sr_streak', JSON.stringify(log)); }
+  },
+  /* 从今天往前连续打卡的天数（含今天尚未打卡时，从昨天起算） */
+  _streakN() {
+    const log = new Set(this._streakLog());
+    let n = 0;
+    const d = new Date();
+    if (!log.has(this._today())) d.setDate(d.getDate() - 1);   // 今天还没打，从昨天数
+    while (true) {
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (!log.has(k)) break;
+      n++; d.setDate(d.getDate() - 1);
+    }
+    return n;
+  },
+  _todayCount() {
+    const d = this.doc;
+    const t = this._today();
+    let n = 0;
+    for (const id of Object.keys(d.partsDone || {})) {
+      const at = (d.partsDone[id] || {}).at;
+      if (at && new Date(at).toISOString().slice(0, 10) === t) n++;
+    }
+    return n;
+  },
+  /* 进度环 + streak HUD（顶部） */
+  _flowHud() {
+    const hud = document.getElementById('flowHud');
+    if (!hud) return;
+    const d = this.doc;
+    if (!d) { hud.classList.add('hidden'); return; }
+    hud.classList.remove('hidden');
+    const nodes = (d.bookmap && d.bookmap.nodes) ? d.bookmap.nodes.filter((n) => !this.isTrivialPart(n)) : [];
+    const ring = hud.querySelector('.flow-ring');
+    const pctTxt = hud.querySelector('.ring-pct');
+    if (!nodes.length) { if (ring) ring.style.opacity = '.35'; if (pctTxt) pctTxt.textContent = '–'; }
+    else {
+      if (ring) ring.style.opacity = '1';
+      const done = nodes.filter((n) => d.partsDone && d.partsDone[n.id]).length;
+      const pct = Math.round(done / nodes.length * 100);
+      const C = 2 * Math.PI * 15.5;
+      const fg = hud.querySelector('.ring-fg');
+      if (fg) { fg.style.strokeDasharray = C; fg.style.strokeDashoffset = C * (1 - pct / 100); }
+      if (pctTxt) pctTxt.textContent = pct + '%';
+    }
+    const streak = hud.querySelector('#streakN');
+    const today = hud.querySelector('#todayN');
+    if (streak) streak.textContent = this._streakN();
+    if (today) today.textContent = this._todayCount();
+    hud.title = nodes.length ? `「${d.title}」进度 ${nodes.filter((n) => d.partsDone && d.partsDone[n.id]).length}/${nodes.length} 节点` : `「${d.title}」尚未拆书`;
+  },
+  /* 章节里程碑：整章节点全打卡 → 优雅庆祝（衬线大字 + 一句意义 + 全场微光，自动淡出） */
+  _milestone(partId) {
+    const d = this.doc;
+    if (!d || !d.bookmap) return;
+    const nodes = d.bookmap.nodes.filter((n) => !this.isTrivialPart(n));
+    const n = nodes.find((x) => x.id === partId);
+    if (!n || !n.chapter) return;
+    const group = nodes.filter((x) => x.chapter === n.chapter);
+    if (!group.length || group.length < 2) return;                    // 单节点章不算里程碑
+    if (!group.every((x) => d.partsDone && d.partsDone[x.id])) return; // 还没啃完
+    d._milestones = d._milestones || {};
+    if (d._milestones[n.chapter]) return;                             // 已庆祝过
+    d._milestones[n.chapter] = Date.now();
+    const chMeta = (d.bookmap.chapters || []).find((m) => m.title.slice(0, 40) === n.chapter) || {};
+    const overlay = SR.el('div', { class: 'milestone' },
+      SR.el('div', { class: 'milestone-inner' },
+        SR.el('div', { class: 'milestone-kicker' }, '✦ 一章完成 ✦'),
+        SR.el('div', { class: 'milestone-title' }, SR.esc(n.chapter)),
+        chMeta.summary ? SR.el('div', { class: 'milestone-sub' }, SR.esc(chMeta.summary)) : null,
+        SR.el('div', { class: 'milestone-meta' }, `${group.length} 个节点 · 全部点亮`)));
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('show'));
+    setTimeout(() => { overlay.classList.remove('show'); setTimeout(() => overlay.remove(), 500); }, 2600);
   },
 
   /* ===== 知识地图（拆书 DAG） ===== */
@@ -2399,12 +2491,76 @@ SR.reader = {
       panel.appendChild(SR.el('div', { class: 'hint pad' }, '还没有知识地图。点击顶部工具栏「🗺 拆书」让 AI 把这本书拆成带依赖关系的节点。'));
       return;
     }
-    const nodes = d.bookmap.nodes.filter((n) => !this.isTrivialPart(n)); // 存量书图里的废料节点不显示
-    if (!nodes.length) {
-      panel.appendChild(SR.el('div', { class: 'hint pad' }, '知识地图没有实质节点。'));
-      return;
+    const nodes = d.bookmap.nodes.filter((n) => !this.isTrivialPart(n));
+    if (!nodes.length) { panel.appendChild(SR.el('div', { class: 'hint pad' }, '知识地图没有实质节点。')); return; }
+    const done = (id) => !!(d.partsDone && d.partsDone[id]);
+    const doneCount = nodes.filter((n) => done(n.id)).length;
+
+    /* 当前焦点节点：陪读目标优先，否则第一个未打卡，全完则最后一个 */
+    let cur = (this.readalong.goal && nodes.find((n) => n.id === this.readalong.goal.id)) || null;
+    if (!cur) cur = nodes.find((n) => !done(n.id)) || nodes[nodes.length - 1];
+    const ci = nodes.findIndex((n) => n.id === cur.id);
+    const prev = ci > 0 ? nodes[ci - 1] : null;
+    const next = nodes.slice(ci + 1).find((n) => !done(n.id)) || null;
+
+    panel.appendChild(SR.el('div', { class: 'section-title' }, `🗺 知识地图 · ${doneCount}/${nodes.length}`));
+    panel.appendChild(this._todayTip(cur));
+    /* 专注三段式：一次只面对一件事 */
+    const focus = SR.el('div', { class: 'bm-focus' });
+    if (prev) focus.appendChild(this._bmFocusRow('prev', prev, d));
+    focus.appendChild(this._bmFocusRow(done(cur.id) ? 'cur done' : 'cur', cur, d));
+    if (next) focus.appendChild(this._bmFocusRow('next', next, d));
+    else if (doneCount === nodes.length) focus.appendChild(SR.el('div', { class: 'bm-all-done' }, '✦ 全书读完，干得漂亮。'));
+    panel.appendChild(focus);
+    /* 完整地图：收拢，点开才渲染（左栏保持轻盈） */
+    const toggle = SR.el('button', { class: 'bm-expand' }, '展开完整地图 ▾');
+    const full = SR.el('div', { class: 'bm-full hidden' });
+    toggle.addEventListener('click', () => {
+      if (full.classList.contains('hidden')) {
+        full.classList.remove('hidden'); toggle.textContent = '收起 ▴';
+        this._renderFullMap(full, nodes, d);
+      } else { full.classList.add('hidden'); full.innerHTML = ''; toggle.textContent = '展开完整地图 ▾'; }
+    });
+    panel.appendChild(toggle);
+    panel.appendChild(full);
+    this._flowHud();
+  },
+
+  /* 今日推荐：第一个未打卡节点 = 消除"从哪开始"的决策成本 */
+  _todayTip(cur) {
+    const d = this.doc;
+    const node = (d.bookmap.nodes || []).filter((n) => !this.isTrivialPart(n)).find((n) => !(d.partsDone && d.partsDone[n.id])) || cur;
+    return SR.el('div', { class: 'bm-tip' },
+      SR.el('span', { class: 'bm-tip-label' }, '今日建议'),
+      SR.el('span', { class: 'bm-tip-body' }, `读「${SR.esc(node.title)}」${node.minutes ? ` · 约 ${node.minutes} 分钟` : ''}`),
+      SR.el('button', { class: 'ghost small', onclick: () => this.setGoal({ id: node.id, title: node.title, from: node.from, to: Math.min(node.to, d.pages) }) }, '开始'));
+  },
+
+  /* 三段式的一行：上一块 / 当前块（大字+灵魂句）/ 下一块 */
+  _bmFocusRow(kind, n, d) {
+    const done = d.partsDone && d.partsDone[n.id];
+    const row = SR.el('div', {
+      class: 'bm-focus-row ' + kind + (done ? ' done' : ''),
+      onclick: () => { this.setGoal({ id: n.id, title: n.title, from: n.from, to: Math.min(n.to, d.pages) }); },
+    });
+    if (kind === 'prev' || kind === 'next') {
+      row.appendChild(SR.el('span', { class: 'bm-focus-kick' }, kind === 'prev' ? '↑ 上一块' : '↓ 下一块'));
+      row.appendChild(SR.el('span', { class: 'bm-focus-title' }, SR.esc(n.title)));
+      row.appendChild(SR.el('span', { class: 'bm-focus-meta' }, `p.${n.from}–${n.to} · ${n.minutes || '?'}min`));
+      return row;
     }
-    // 拓扑分层显示
+    row.appendChild(SR.el('div', { class: 'bm-focus-kick' }, done ? '✓ 当前块 · 已点亮' : '▸ 当前块'));
+    row.appendChild(SR.el('div', { class: 'bm-focus-title' }, SR.esc(n.title)));
+    if (n.reason) row.appendChild(SR.el('div', { class: 'bm-focus-soul' }, SR.esc(String(n.reason).slice(0, 90))));
+    row.appendChild(SR.el('div', { class: 'bm-focus-meta' }, `${n.id} · p.${n.from}–${n.to} · 约 ${n.minutes || '?'} 分钟`));
+    row.appendChild(SR.el('div', { class: 'bm-focus-ops' },
+      SR.el('button', { class: 'primary small', onclick: (ev) => { ev.stopPropagation(); this.setGoal({ id: n.id, title: n.title, from: n.from, to: Math.min(n.to, d.pages) }); if (!this.readalong.on) this.toggleReadalong(); this.scrollToPage(n.from); SR.toast(`🎯 陪读目标：${n.title}`); } }, '开始这块'),
+      SR.el('button', { class: 'ghost small', onclick: (ev) => { ev.stopPropagation(); SR.chat.startPartReview({ id: n.id, title: n.title, from: n.from, to: Math.min(n.to, d.pages) }); } }, '直接复盘')));
+    return row;
+  },
+
+  /* 完整地图（折叠展开）：原 v2 层次目录 + v1 拓扑分层 */
+  _renderFullMap(panel, nodes, d) {
     const level = {};
     const getId = (n) => n.id;
     const resolve = (id, seen = new Set()) => {
@@ -2419,12 +2575,9 @@ SR.reader = {
     };
     nodes.forEach((n) => resolve(n.id));
     const hasCh = nodes.some((n) => n.chapter);
-    panel.appendChild(SR.el('div', { class: 'section-title' }, `🗺 知识地图 · ${nodes.length} 节点（${Object.keys(d.partsDone || {}).length} 已打卡）`));
-    /* v2 书图：层次目录（可折叠章 → 节点），v1 存量仍走拓扑分层 */
     if (hasCh) {
       const chMeta = d.bookmap.chapters || [];
       const titles = [...new Set(nodes.map((n) => n.chapter))];
-      /* 默认展开第一个未全打卡的章（当前进度章）；全完则展开最后一章 */
       let defOpen = titles.findIndex((t) => !(d.partsDone && nodes.filter((n) => n.chapter === t).every((n) => d.partsDone[n.id])));
       if (defOpen < 0) defOpen = titles.length - 1;
       titles.forEach((chTitle, ci) => {

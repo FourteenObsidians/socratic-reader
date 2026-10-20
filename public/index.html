@@ -15,6 +15,15 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
 
 <header id="topbar">
   <div class="brand">🏛 苏格拉底阅读器</div>
+  <div id="flowHud" class="hidden" title="">
+    <svg class="flow-ring" viewBox="0 0 36 36" width="34" height="34" aria-hidden="true">
+      <circle class="ring-bg" cx="18" cy="18" r="15.5"></circle>
+      <circle class="ring-fg" cx="18" cy="18" r="15.5"></circle>
+      <text class="ring-pct" x="18" y="21" text-anchor="middle">0%</text>
+    </svg>
+    <span class="flow-streak" title="连续学习天数（跨书累计）">🔥 <b id="streakN">0</b></span>
+    <span class="flow-today" title="今日点亮节点数">✦ <b id="todayN">0</b></span>
+  </div>
   <nav id="modes">
     <button class="mode-btn" data-mode="library">📚 书库</button>
     <span class="mode-sep" title="学习：建立理解"></span>
