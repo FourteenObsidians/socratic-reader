@@ -1476,15 +1476,20 @@ SR.reader = {
 
   /* ===== EPUB 支持：epub.js 渲染；spine 章节即"页码"，带读/拆书/批注全链路与 PDF 同构 ===== */
   async _loadEpubLib() {
-    if (window.ePub) return true;
+    if (typeof window.ePub === 'function') return true;
     try {
+      /* vendor 的 epub.min.js 是 UMD 包装：浏览器分支要求 window.JSZip 先就位
+         （否则 ePub 注册失败 → 打开 ReferenceError——桌面 books 那本书打不开的根因） */
+      if (!window.JSZip) {
+        await SR.loadScript(['vendor/jszip.min.js', 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js']).catch(() => {});
+      }
       await SR.loadScript([
         'vendor/epub.min.js',
         'https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js',
         'https://unpkg.com/epubjs@0.3.93/dist/epub.min.js',
       ]);
     } catch { /* 走 CDN 失败 */ }
-    return !!window.ePub;
+    return typeof window.ePub === 'function';
   },
 
   async openEpub(absPath) {
