@@ -742,3 +742,21 @@ body.debug-hl .hl { outline: 2px solid #ff5252; opacity: .8; }
 
 /* KaTeX 修复：无障碍 MathML 层会随选中复制出双份乱码文本（用户常复制公式引用）——隐藏之 */
 .katex .katex-mathml { display: none !important; }
+
+/* ⛶ AI 面板全屏：隐藏侧栏与原文区，对话占满 */
+body.ai-full #main { grid-template-columns: 0 0 1fr !important; }
+body.ai-full #sidebar, body.ai-full #center { overflow: hidden; }
+body.ai-full #aiPanel { border-left: none; }
+/* 全屏下对话更舒展：加宽行宽上限 + 字号微升 */
+body.ai-full #chatMsgs .msg { max-width: 100%; }
+body.ai-full .msg .bubble { font-size: 14.5px; }
+
+/* Claude 风对话排版：AI 回答用衬线（Tiempos 语感 → Noto Serif），用户消息保持 Inter */
+.msg.assistant .bubble {
+  font-family: var(--font-display);
+  font-size: 14px; line-height: 1.78; letter-spacing: .005em;
+}
+.msg.user .bubble { font-family: var(--font-ui); }
+.msg .bubble li, .msg .bubble blockquote { line-height: 1.75; }
+.tc-answer { font-family: var(--font-display); font-size: 13.5px; line-height: 1.72; }
+.tr-dst { font-family: var(--font-display); font-size: 13.5px; line-height: 1.7; }

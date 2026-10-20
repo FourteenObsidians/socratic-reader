@@ -251,7 +251,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v47.4-公式复制修复';
+  SR.VERSION = 'v47.5-面板全屏';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#d97757;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -445,6 +445,17 @@ SR.zotero = {
   renderPuzzleBtn();
   document.getElementById('btnChatClear').addEventListener('click', () => SR.chat.clear());
   document.getElementById('btnExportChat').addEventListener('click', () => SR.chat.exportChat());   // 对话导出为 md（存 vault）
+  /* ⛶ AI 面板全屏：隐藏侧栏与原文区，对话占满（Esc 退出） */
+  const btnAiFull = document.getElementById('btnAiFull');
+  const toggleAiFull = () => {
+    const on = document.body.classList.toggle('ai-full');
+    btnAiFull.textContent = on ? '🗗' : '⛶';
+    btnAiFull.title = on ? '退出全屏（Esc）' : 'AI 面板全屏（不看原文、专心对话）';
+  };
+  btnAiFull.addEventListener('click', toggleAiFull);
+  window.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && document.body.classList.contains('ai-full')) { ev.stopPropagation(); toggleAiFull(); }
+  });
   /* 聊天气泡里选中文字 → 浮出 📖 速查按钮（带读岔题补课，不污染主会话） */
   document.getElementById('chatMsgs').addEventListener('mouseup', () => {
     setTimeout(() => {
