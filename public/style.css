@@ -760,3 +760,60 @@ body.ai-full .msg .bubble { font-size: 14.5px; }
 .msg .bubble li, .msg .bubble blockquote { line-height: 1.75; }
 .tc-answer { font-family: var(--font-display); font-size: 13.5px; line-height: 1.72; }
 .tr-dst { font-family: var(--font-display); font-size: 13.5px; line-height: 1.7; }
+
+/* ============ 主题色板 + 现代动效 ============ */
+#accentPalette {
+  position: fixed; z-index: 150; display: flex; gap: 7px; padding: 9px 11px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  animation: cardIn .2s cubic-bezier(.2,.8,.2,1) both;
+}
+#accentPalette .accent-swatch {
+  width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; transition: transform .15s ease, border-color .15s ease;
+}
+#accentPalette .accent-swatch:hover { transform: scale(1.2); }
+#accentPalette .accent-swatch.sel { border-color: var(--text); box-shadow: 0 0 0 2px var(--panel); }
+
+/* 主题/换色平滑过渡（背景/文字/边框颜色渐变，换色有流动感） */
+body, #topbar, #sidebar, #aiPanel, #chatHeader, #chatInputBar, #reviewBanner,
+.side-panel, .path-bar, .file-row, .recent-item, .map-node, .bm-focus-row, .bm-tip, .bm-ch,
+.msg .bubble, .tc-answer, input, textarea, select, button, .chip, .mode-btn, .side-tab,
+.termCard, .tr-card, .noteCard, .milestone-inner, .swatch, .toast {
+  transition: background-color .3s ease, color .3s ease, border-color .3s ease;
+}
+
+/* 按钮/标签 hover 微抬升 */
+button.primary, button.ghost, .mode-btn, .side-tab, .chip {
+  transition: transform .16s cubic-bezier(.2,.8,.2,1), background-color .2s ease, color .2s ease, border-color .2s ease, box-shadow .16s ease;
+}
+button.primary:hover, button.ghost:hover { transform: translateY(-1px); }
+.mode-btn:hover, .side-tab:hover { transform: translateY(-1px); }
+.chip:hover { transform: translateY(-1px); }
+#btnAccent { transition: transform .25s cubic-bezier(.2,.8,.2,1); }
+#btnAccent:hover { transform: rotate(20deg) scale(1.1); }
+
+/* 卡片 hover 反馈 */
+.file-row { transition: background-color .18s ease, transform .18s ease, border-color .18s ease; }
+.file-row:hover { transform: translateX(3px); }
+.recent-item { transition: background-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+.recent-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-pop); }
+.map-node, .bm-focus-row { transition: background-color .18s ease, border-color .18s ease, transform .18s ease; }
+.map-node:hover { transform: translateX(2px); }
+
+/* 浮层弹出（速查卡/翻译卡/笔记卡/色板） */
+.termCard, .tr-card, .noteCard { animation: cardIn .28s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+
+/* 流式气泡出现（仅 streaming 态，renderMsgs 历史重建不重放） */
+.msg.streaming .bubble { animation: bubbleIn .3s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes bubbleIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* 视图切换淡入 */
+#viewReader, #viewLibrary, #viewExplore, #viewReview { animation: viewIn .32s ease both; }
+@keyframes viewIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* 尊重系统减弱动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

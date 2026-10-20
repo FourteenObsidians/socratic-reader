@@ -257,7 +257,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v47.12-EPUB布局根因';
+  SR.VERSION = 'v47.13-主题色板动效';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#d97757;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -294,17 +294,62 @@ SR.zotero = {
   SR.cards.init();
   SR.settings.init();
 
-  /* 主题切换（亮=暖纸色 / 暗=神庙深色），选择记住 */
+  /* 主题切换 + 换色（主题色板）——选择记住 */
+  const ACCENTS = [
+    { id: 'terracotta', name: '陶土', light: '#a94f2f', dark: '#d97757' },
+    { id: 'blue', name: '克莱因蓝', light: '#3b56d9', dark: '#8ab4f8' },
+    { id: 'forest', name: '森林绿', light: '#46784e', dark: '#8cbf96' },
+    { id: 'violet', name: '鸢尾紫', light: '#5f51b5', dark: '#b9adf0' },
+    { id: 'gold', name: '琥珀金', light: '#a8752a', dark: '#e3b34c' },
+    { id: 'rose', name: '玫瑰', light: '#b04a6a', dark: '#e5a0b2' },
+    { id: 'teal', name: '青碧', light: '#2e7554', dark: '#7cc2a0' },
+  ];
+  const _hexRgb = (hex) => { const n = parseInt(hex.slice(1), 16); return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`; };
+  const _dim = (hex, f = 0.78) => { const n = parseInt(hex.slice(1), 16); const c = (x) => Math.round(x * f); return `#${((1 << 24) + (c((n >> 16) & 255) << 16) + (c((n >> 8) & 255) << 8) + c(n & 255)).toString(16).slice(1)}`; };
+  const applyAccent = (id) => {
+    const acc = ACCENTS.find((a) => a.id === id) || ACCENTS[0];
+    const t = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    const hex = acc[t];
+    const root = document.documentElement.style;
+    root.setProperty('--accent', hex);
+    root.setProperty('--accent-dim', _dim(hex));
+    root.setProperty('--accent-rgb', _hexRgb(hex));
+    try { localStorage.setItem('sr_accent', acc.id); } catch { /* ignore */ }
+    /* 色板选中态 */
+    document.querySelectorAll('#accentPalette .swatch').forEach((s) => s.classList.toggle('sel', s.dataset.acc === acc.id));
+    return acc;
+  };
   const applyTheme = (t) => {
     document.documentElement.dataset.theme = t;
     try { localStorage.setItem('sr_theme', t); } catch { /* ignore */ }
     const b = document.getElementById('btnTheme');
     b.textContent = t === 'light' ? '🌙' : '☀️';
     b.title = t === 'light' ? '切换到暗色模式' : '切换到亮色模式';
+    applyAccent((localStorage.getItem('sr_accent')) || 'terracotta');   // 主题切换后按当前主题重设 accent
   };
   document.getElementById('btnTheme').addEventListener('click', () => {
     applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
   });
+  /* 🎨 主题色板：顶栏按钮弹出色块，点击应用并收起 */
+  const palEl = document.getElementById('accentPalette');
+  palEl.innerHTML = ACCENTS.map((a) => {
+    const dot = document.createElement('span');
+    dot.className = 'swatch accent-swatch';
+    dot.dataset.acc = a.id;
+    dot.title = a.name;
+    dot.style.background = document.documentElement.dataset.theme === 'light' ? a.light : a.dark;
+    dot.addEventListener('click', () => { applyAccent(a.id); palEl.classList.add('hidden'); });
+    return dot;
+  });
+  palEl.append(...palEl.querySelectorAll('.swatch'));
+  document.getElementById('btnAccent').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    palEl.classList.toggle('hidden');
+    const tb = document.getElementById('btnAccent').getBoundingClientRect();
+    palEl.style.top = (tb.bottom + 8) + 'px';
+    palEl.style.right = Math.max(8, window.innerWidth - tb.right - 8) + 'px';
+  });
+  document.addEventListener('click', (ev) => { if (!ev.target.closest('#accentPalette') && !ev.target.closest('#btnAccent')) palEl.classList.add('hidden'); });
   applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
 
   /* 顶栏 */
