@@ -152,24 +152,91 @@ SR.md = (src) => {
     .replace(/^###\s+(.+)$/gm, '<h4>$1</h4>')
     .replace(/^##\s+(.+)$/gm, '<h3>$1</h3>')
     .replace(/^#\s+(.+)$/gm, '<h2>$1</h2>')
-    .replace(/^&gt;\s?(.+)$/gm, '<blockquote>$1</blockquote>')
-    .replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>')
-    .replace(/^\s*\d+\.\s+(.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, '<ul>$1</ul>')
+    .replace(/^\s*&gt;\s?(.*)$/gm, '<bq>$1</bq>')
+    .replace(/^\s*[-*+]\s+(.+)$/gm, '<li data-k="u">$1</li>')
+    .replace(/^\s*\d+[.)]\s+(.+)$/gm, '<li data-k="o">$1</li>')
     .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
     .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>')
     .replace(/`([^`\n]+)`/g, '<code>$1</code>')
     .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/\[\[([^\]]+)\]\]/g, '<span class="wikilink">[[$1]]</span>')
     .replace(/^---$/gm, '<hr>');
+  /* 列表/引用成组：连续 <li data-k="u|o"> 归并成一个 <ul>/<ol>；连续 <bq> 归并成一个 <blockquote> */
+  {
+    const lines = s.split('\n');
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const liM = lines[i].match(/^<li data-k="([uo])">([\s\S]*?)<\/li>$/);
+      if (liM) {
+        const kind = liM[1];
+        const buf = [];
+        while (i < lines.length) {
+          const m = lines[i].match(/^<li data-k="([uo])">([\s\S]*?)<\/li>$/);
+          if (!m || m[1] !== kind) break;
+          buf.push(`<li>${m[2]}</li>`);
+          i++;
+        }
+        out.push(kind === 'o' ? `<ol>${buf.join('')}</ol>` : `<ul>${buf.join('')}</ul>`);
+        continue;
+      }
+      const bqM = lines[i].match(/^<bq>([\s\S]*?)<\/bq>$/);
+      if (bqM) {
+        const buf = [];
+        while (i < lines.length) {
+          const m = lines[i].match(/^<bq>([\s\S]*?)<\/bq>$/);
+          if (!m) break;
+          buf.push(m[1]);
+          i++;
+        }
+        out.push(`<blockquote>${buf.join('<br>')}</blockquote>`);
+        continue;
+      }
+      out.push(lines[i]);
+      i++;
+    }
+    s = out.join('\n');
+  }
+  /* 表格：行级 GFM 解析（在行内格式已展开之后、段落切分之前）。
+     支持有无首尾竖线、:--: 对齐、单元格内 \| 转义；表格整体替换成占位符，避免被 <p> 包住。 */
+  const tables = [];
+  {
+    const isSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(l);
+    const splitCells = (l) => {
+      let t = String(l).trim();
+      if (t.startsWith('|')) t = t.slice(1);
+      if (t.endsWith('|') && !t.endsWith('\\|')) t = t.slice(0, -1);
+      return t.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'));
+    };
+    const cellAlign = (c) => (/^:-+:$/.test(c) ? 'center' : /-+:$/.test(c) ? 'right' : /^:-+$/.test(c) ? 'left' : '');
+    const lines = s.split('\n');
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (i + 1 < lines.length && lines[i].includes('|') && isSep(lines[i + 1])) {
+        const head = splitCells(lines[i]);
+        const aligns = splitCells(lines[i + 1]).map(cellAlign);
+        const body = [];
+        let j = i + 2;
+        while (j < lines.length && lines[j].trim() && lines[j].includes('|')) { body.push(splitCells(lines[j])); j++; }
+        const th = head.map((c, k) => `<th${aligns[k] ? ` style="text-align:${aligns[k]}"` : ''}>${c}</th>`).join('');
+        const tb = body.map((r) => `<tr>${r.map((c, k) => `<td${aligns[k] ? ` style="text-align:${aligns[k]}"` : ''}>${c}</td>`).join('')}</tr>`).join('');
+        tables.push(`<div class="md-table"><table><thead><tr>${th}</tr></thead>${tb ? `<tbody>${tb}</tbody>` : ''}</table></div>`);
+        out.push(`\u0000T${tables.length - 1}\u0000`);
+        i = j - 1;
+      } else out.push(lines[i]);
+    }
+    s = out.join('\n');
+  }
   s = s.split(/\n{2,}/).map((para) => {
     const t = para.trim();
     if (!t) return '';
     if (/^<(h\d|ul|blockquote|pre|hr)/.test(t)) return t;
     if (/^\u0000M\d+\u0000$/.test(t)) return t;   // 独立成段的公式：不加 <p>（display 层级合法）
+    if (/^\u0000T\d+\u0000$/.test(t)) return t;   // 表格整体：不加 <p>
     return `<p>${t.replace(/\n/g, '<br>')}</p>`;
   }).join('\n');
   s = s.replace(/\u0000B(\d+)\u0000/g, (_, i) => blocks[Number(i)]);
+  s = s.replace(/\u0000T(\d+)\u0000/g, (_, i) => tables[Number(i)]);
   s = s.replace(/\u0000M(\d+)\u0000/g, (_, i) => maths[Number(i)]);
   return s;
 };
