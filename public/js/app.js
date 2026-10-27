@@ -257,7 +257,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v47.18-Claude视觉升级';
+  SR.VERSION = 'v47.19-算法四工具';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#d97757;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -393,6 +393,8 @@ SR.zotero = {
   document.getElementById('btnPartReview').addEventListener('click', () => SR.chat.startGuidedReading());
   document.getElementById('btnWitRead').addEventListener('click', () => SR.chat.startWitReading());   // WIT 科研审读
   document.getElementById('btnFrameRead').addEventListener('click', () => SR.chat.startFrameReading());   // 框架优先精读
+  document.getElementById('btnDehydrate').addEventListener('click', () => SR.chat.startDehydrate());   // 算法脱水
+  document.getElementById('btnDuel').addEventListener('click', () => SR.chat.startDuel());             // 出题对赌
   /* 带读位置徽章：点击跳转并块高亮 PDF 对应位置 */
   document.getElementById('chatMsgs').addEventListener('click', (ev) => {
     const b = ev.target.closest && ev.target.closest('.page-badge');
@@ -530,6 +532,7 @@ SR.zotero = {
 
   /* 自由探索 */
   document.getElementById('btnExploreStart').addEventListener('click', () => SR.chat.startExplore());
+  document.getElementById('btnFindTopic').addEventListener('click', () => SR.chat.startFindTopic());   // 方向过滤
   document.getElementById('exploreTopic').addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') SR.chat.startExplore();
   });

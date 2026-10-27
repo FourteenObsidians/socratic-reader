@@ -942,3 +942,16 @@ button.primary:hover, button.ghost:hover { transform: translateY(-1px); }
 .recent-item { min-height: 88px; padding-top: 13px; padding-bottom: 13px; }
 .recent-item .t::before { top: 18px; }
 .chat-empty p { max-width: 360px; }
+
+/* ============ 算法工具：脱水 / 对赌 / 玩具代码 ============ */
+.codeCard { width: 480px !important; }
+.codeCard .tc-thread { max-height: 58vh; overflow-y: auto; }
+.codeCard pre {
+  background: var(--panel2); border: 1px solid var(--hairline); border-radius: 9px;
+  padding: 11px 12px; overflow-x: auto; font-size: 11.5px; line-height: 1.62; margin: 8px 0;
+}
+.codeCard pre code { background: none; padding: 0; color: var(--text); }
+.codeCard .tr-src { font-size: 11.5px; }
+/* 探索页两个按钮并排 */
+.explore-card > button#btnExploreStart { margin-right: 8px; }
+#btnFindTopic { margin-top: 4px; }

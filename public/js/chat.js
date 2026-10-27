@@ -346,6 +346,54 @@ ${r.content}`
   /* ---------- 发送 ---------- */
   /* ---------- 名词速查卡：带读途中岔题补课，独立消息流，主会话零污染 ----------
      支持递归：卡片里的解释又出现新名词 → 选中 → 再开一张卡（可叠多层，Esc 逐层关） */
+  /* ---------- 工具三：玩具代码还原器（选中公式/段落 → 30 行可跑 Demo） ---------- */
+  async openCodeCard(text, extraCtx) {
+    const src = String(text || '').trim().slice(0, 6000);
+    if (!src) return;
+    if (this._codeCard) { try { this._codeCard.remove(); } catch { /* ignore */ } this._codeCard = null; }
+    const s = SR.state.session;
+    const ctx = (s && s.context && s.context.title) ? `《${s.context.title}》${s.context.partTitle ? ' · ' + s.context.partTitle : ''}` : '';
+    const ans = SR.el('div', { class: 'tc-answer' }, '…');
+    const card = SR.el('div', { class: 'termCard codeCard' },
+      SR.el('div', { class: 'tc-head' },
+        SR.el('span', { class: 'tc-title' }, '🧸 玩具代码'),
+        SR.el('span', { class: 'tc-term' }, extraCtx && extraCtx.page ? 'p.' + extraCtx.page : ''),
+        SR.el('button', { class: 'ghost small', title: '关闭（Esc）', onclick: () => { card.remove(); this._codeCard = null; } }, '✕')),
+      SR.el('div', { class: 'tc-thread' },
+        SR.el('div', { class: 'tr-src', style: 'max-height:70px' }, src.slice(0, 260) + (src.length > 260 ? '…' : '')),
+        ans));
+    this._codeCard = card;
+    document.body.appendChild(card);
+    SR.draggable(card, card.querySelector('.tc-head'));
+    card.style.right = '24px'; card.style.top = '76px'; card.style.width = '480px';
+    const sys = [
+      '你是「玩具代码还原器」。把用户给的公式 / 段落，变成一份**纯内存、完全自包含、可直接运行**的最小 Demo。',
+      '',
+      '## 硬性要求',
+      '1. 代码不超过 30 行；只用标准库或 numpy，禁止任何第三方生信 / 机器学习包。',
+      '2. 自带 5 个假的样本数据（构造好，复制就能跑）。',
+      '3. 只演示这个核心计算的数值过程，不实现工程细节、不做异常处理。',
+      '4. 关键计算行加中文注释，说明它的物理 / 数学意义。',
+      '',
+      '## 输出格式',
+      '第一行用一句话说明「这段代码演示了什么」；',
+      '然后一个 python 代码块；',
+      '最后用 3–5 行说明「改哪个参数 / 输入，能观察到什么变化」。',
+      '不要额外的开场白或总结。',
+    ].join('\n');
+    try {
+      const acc = await SR.chatStream([{ role: 'system', content: sys }, { role: 'user', content: (ctx ? ctx + '\n\n' : '') + src }], {
+        onDelta: (_d, all) => { ans.innerHTML = SR.md(all); },
+      });
+      ans.innerHTML = SR.md(acc);
+      card.appendChild(SR.el('div', { class: 'tc-bar' },
+        SR.el('button', { class: 'ghost small', onclick: () => SR.copyText(acc) }, '📋 复制全部'),
+        SR.el('button', { class: 'ghost small', onclick: () => { card.remove(); this._codeCard = null; } }, '关闭')));
+    } catch (e) {
+      ans.innerHTML = `<b style="color:var(--red)">生成失败：</b>${SR.esc(e.message)}`;
+    }
+  },
+
   openTermCard(term, extraCtx) {
     const t = String(term || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     if (!t) return;
@@ -644,7 +692,7 @@ ${r.content}`
     /* 出题偏好动态层：每条消息按当前配置剥旧贴新（改开关立刻生效，无需重开课） */
     let sysBase = String(s.system || '')
       .replace(/\n?## 算法题偏好（用户的私人爽点[\s\S]*?(?=\n## |$)/g, '');   // 剥掉旧层（含静态烘焙版）
-    const pz = this.puzzleLayer();
+    const pz = (s.mode === 'dehydrate' || s.mode === 'duel') ? '' : this.puzzleLayer();   // 脱水/对赌模式不注入出题偏好层
     if (pz) sysBase += '\n' + pz;
     /* 公式排版指令：与语言指令同级，每条消息强制注入（旧会话刷新后立即生效，不靠开课时烘焙） */
     const texDirective = '【公式排版】数学内容一律规范 LaTeX，前端用 KaTeX 渲染：行内 $...$、独立公式 $$...$$。包括：变量与参数（$T = 600$、$\\eta$）、区间/坐标（$[9000,\\ 15000]$）、集合（$\\{0, 300, 700\\}$）、运算与比较（$d(x,y) \\le T$、$\\sum_i \\mathrm{AF}_i$）、上下标（$w_{t+1}$）。【严禁】Unicode 拼凑（x²、∑、≤、≥、×、→ 单独出现）——比较符写 $\\le$、箭头写 $\\to$。算法题的规则、数据、求解里同样遵守（表格单元格内也用 LaTeX）。散文里的普通名词不带 $。';
@@ -1101,6 +1149,126 @@ ${r.content}`
   },
 
   /* ---------- 场景三：自由探索 ---------- */
+  /* ---------- 工具一：算法脱水（论文 → 纯算法规格说明书） ---------- */
+  async startDehydrate(partArg) {
+    const d = SR.state.doc;
+    if (!d) { SR.toast('请先打开一个 PDF'); return; }
+    const part = partArg || SR.reader.currentPart();
+    if (!part) { SR.toast('请先框选一个部分（下拉选择或自定义页码段）'); return; }
+    const pg = SR.progress('material', `📥 提取材料 · ${part.title.slice(0, 16)}`);
+    pg.set(20, '逐页提取文本…');
+    const mat = await SR.reader.getPartMaterial(part);
+    if (!mat.text) { pg.fail('该部分没有可提取的文本（扫描件？）'); SR.toast('该部分没有可提取的文本', 'error'); return; }
+    pg.done(`已提取 ${(mat.text.length / 1000).toFixed(1)}k 字`, 1500);
+    const memory = await this.learningMemory(`${d.title} ${part.title}`);
+    const system = [
+      '## 角色',
+      '你是算法审读专家，服务对象是「对生物学叙事极度过敏、对图论 / 数据结构 / 复杂度极敏」的理论计算机选手。',
+      '',
+      '## 任务',
+      '把材料反编译成一份**算法题解与技术规格说明书**。彻底剔除癌症、表型、医学价值、生物学意义等背景修辞，只保留计算内核。',
+      '',
+      '## 输出结构（严格五板块；无开场白、无结语、不提问、不引导）',
+      '### 1. 形式化问题定义',
+      '输入是什么数据结构（图 / 序列 / 矩阵 / 集合；给规模变量，如节点数 V、边数 E、序列长 n）、输出是什么、优化目标函数是什么（用规范 LaTeX 写出来）。',
+      '',
+      '### 2. 核心机制与降维点',
+      '用了什么核心算法 / 数学技巧（剪枝、位运算、动态规划、分治、近似、采样、变分推断…）；相比朴素暴力，创新点在哪——用一句话说清「把什么复杂度降成了什么」。',
+      '',
+      '### 3. 时空复杂度审计',
+      '时间复杂度、空间复杂度（大 O 记法，注明变量含义）；隐藏的高维灾难或常数陷阱（例如：看着是线性对数级但常数极大、内存开销是输入的几十倍、必须全量物化中间结果）。',
+      '',
+      '### 4. 伪代码骨架',
+      '不超过 20 行的极简伪代码（C / Python 风格），只写计算最核心的一处循环或矩阵操作，不要工程细节。',
+      '',
+      '### 5. 缺陷与质疑',
+      '从计算机角度挑刺：过拟合、缺乏通用性、旧瓶装新酒（本质是 X 加 Y）、假设不成立、常数太大、不可并行。',
+      '',
+      '## 规则',
+      '- 数学一律规范 LaTeX；变量用材料原文符号。',
+      '- 材料没给的信息写「材料未给出」，禁止编造数字。',
+      '- 全文 600–900 字，密度优先；不写「本文提出…」式引言，直接进板块。',
+      memory,
+    ].join('\n');
+    this.newSession('dehydrate', `⚙ ${d.title} · 算法脱水`, {
+      brief: `⚙ 算法脱水 · p.${part.from}–${part.to}`, file: d.path, title: d.title, partTitle: part.title, from: part.from, to: part.to,
+    }, system);
+    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【正文（可能截断；若截断请在报告里注明）】\n${mat.text.slice(0, 40000)}\n\n现在开始脱水：按五个板块输出规格说明书。`, mat.images || []);
+  },
+
+  /* ---------- 工具二：出题对赌（AI 出题 → 你提方案 → 揭晓作者做法对比） ---------- */
+  async startDuel(partArg) {
+    const d = SR.state.doc;
+    if (!d) { SR.toast('请先打开一个 PDF'); return; }
+    const part = partArg || SR.reader.currentPart();
+    if (!part) { SR.toast('请先框选一个部分'); return; }
+    const pg = SR.progress('material', `📥 提取材料 · ${part.title.slice(0, 16)}`);
+    pg.set(20, '逐页提取文本…');
+    const mat = await SR.reader.getPartMaterial(part);
+    if (!mat.text) { pg.fail('该部分没有可提取的文本'); SR.toast('该部分没有可提取的文本', 'error'); return; }
+    pg.done(`已提取 ${(mat.text.length / 1000).toFixed(1)}k 字`, 1500);
+    const memory = await this.learningMemory(`${d.title} ${part.title}`);
+    const system = [
+      '## 角色',
+      '你是算法竞赛出题人 + 论文裁判。服务对象是算法竞赛选手：他要的是「自己先想、再和作者比」的刺激，不是听讲解。',
+      '',
+      '## 流程（严格三步，不许跳步、不许多问）',
+      '**第 1 轮：只出题。**',
+      '从材料的研究目标 / 核心问题上，抽象成一道竞赛题：',
+      '- **问题定义**：输入格式、输出格式、什么叫正确答案（判定标准必须无歧义）；',
+      '- **规模与限制**：必须给出具体规模上界（如 n 不超过一百万）以及时间限制（如 1 s）、空间限制（如 256 MB）；',
+      '- 最后一句：「给我你的算法构想，我先不说作者怎么做。」',
+      '【最关键】题目只能定义**问题**：【严禁】把作者的算法、数据结构、处理流程写进题目规则。特别是这些词一律不许出现：连通分量、传递闭包、并查集、排序后扫描、滑窗、直径检查、动态规划、剪枝——它们是解法，不是问题。若作者的核心贡献恰好是算法（很常见），题目里必须把它整个藏起来，只留输入输出和正确性判据，让用户自己设计怎么算。',
+      '【硬性】必须写出时间限制和空间限制（如 1 s / 256 MB），并让规模上界与之匹配（n 到 10^6 就要给 1–2 s 这个量级）。',
+      '【严禁】本轮给出任何解法、提示、复杂度暗示或方向引导。',
+      '',
+      '**第 2 轮（用户给出构想后）：裁判。**',
+      '先逐条评他的方案：正确性、复杂度、最坏情况、边界条件、会不会退化；',
+      '再揭示作者的真实做法（引用材料原句或页码定位）；',
+      '最后对比：谁更优、作者偷了什么懒、他的方案哪里有洞、哪里反而比作者更好。',
+      '',
+      '**后续**：可以换一道题、深挖某一点、或要求把作者做法也抽象成题让用户再解一次。',
+      '',
+      '## 风格',
+      '像竞赛教练 / 审稿人：直接、锋利、不客套。评判必须有依据（复杂度、最坏情况、内存），不空夸、不和稀泥。',
+      '数学用规范 LaTeX。',
+      memory,
+    ].join('\n');
+    this.newSession('duel', `⚔ ${d.title} · 出题对赌`, {
+      brief: `⚔ 出题对赌 · p.${part.from}–${part.to}`, file: d.path, title: d.title, partTitle: part.title, from: part.from, to: part.to,
+    }, system);
+    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【正文（可能截断）】\n${mat.text.slice(0, 40000)}\n\n现在开始第 1 轮：只出题，不给任何提示。`, mat.images || []);
+  },
+
+  /* ---------- 工具四：研究方向过滤（找有硬计算瓶颈的题） ---------- */
+  async startFindTopic() {
+    const lv = document.getElementById('exploreLevel');
+    const level = lv ? lv.value : '本科生';
+    const system = [
+      '## 角色',
+      '你是研究方向的「算法过滤顾问」。服务对象：算法功底强（C / 图论 / 动态规划）、对传统生物通路描述极度厌倦的生信学生。',
+      '',
+      '## 任务',
+      '在【计算生物学 / AI 生物安全 / 基因组学】领域，筛选 3 个符合以下特征的前沿课题：',
+      '1. **强计算约束**：问题本质是明确的计算科学 / 离散数学难点（NP-hard 近似求解、大规模高维图同构、长序列比对的高效索引、差分隐私保护…），而不是靠生物学故事糊弄。',
+      '2. **拒绝湿实验依赖**：研究重心在算法复杂度优化、数据结构设计或模型架构改良，不是跑通路分析。',
+      '3. **信噪比极高**：有清晰的性能评价指标（benchmark、时间、内存、重构精度），对就是对、错就是错，没有灰色地带。',
+      '',
+      '## 每个课题必须给出',
+      '- **核心瓶颈**：一句话量化（规模、复杂度壁垒在哪）；',
+      '- **前沿突破口通常借用计算机哪类经典理论**（如：可满足性、图分解、sketching、低秩近似）；',
+      '- **一个具体可做的切入点**（1–2 句，能落到实验设计）；',
+      '- **为什么它「不恶心」**：说清它不是「现成框架套不同数据集」的灌水。',
+      '',
+      '## 规则',
+      '- 给真实存在的研究方向，不要编造论文标题或作者。',
+      '- 复杂度用规范 LaTeX；总长 700–1000 字。',
+      `\n用户自评水平：${level}`,
+    ].join('\n');
+    this.newSession('explore', '🎯 找硬核方向', { brief: '🎯 研究方向过滤 · 计算生物学' }, system);
+    this.send('帮我筛 3 个符合条件的前沿方向，按上面的结构逐条写清楚。');
+  },
+
   async startExplore() {
     const topic = document.getElementById('exploreTopic').value.trim();
     if (!topic) { SR.toast('请输入想学的主题'); return; }

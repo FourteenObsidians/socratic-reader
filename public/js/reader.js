@@ -1412,6 +1412,10 @@ SR.reader = {
       /* 划段翻译：译文浮层贴选区下方，原文/译文对照，可存为批注 */
       this.translateSelection(s, tbAnchor);
       return;
+    } else if (act === 'code') {
+      /* 玩具代码：把公式/段落变成 30 行内可跑的 Demo（浮层卡片，不污染主对话） */
+      SR.chat.openCodeCard(s.text, { page: firstPage });
+      return;
     }
     window.getSelection().removeAllRanges();
   },

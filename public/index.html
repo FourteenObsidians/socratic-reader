@@ -80,6 +80,8 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
         <button id="btnPartReview" class="primary small" title="框选一个部分（上方下拉或自定义页码段），AI 切块介绍并逐块提问，边读边引导">🎧 苏格拉底带读 · 本部分</button>
         <button id="btnWitRead" class="ghost small" title="WIT 精读：骨架→Claim-Evidence 地图→六维拷问→竞争解释→审稿人压力测试，像审稿人一样读论文">🔬 WIT 精读 · 本部分</button>
         <button id="btnFrameRead" class="ghost small" title="框架优先：先给整篇论文地图（问题/方法/结果/结论），再让你自己导航，卡住才缝补——不逐问、不从 Introduction 开始">🗺 框架优先</button>
+        <button id="btnDehydrate" class="ghost small" title="算法脱水：把论文反编译成纯算法规格说明书——形式化定义 / 核心机制 / 复杂度审计 / 伪代码 / 挑刺，彻底剔除生物学叙事">⚙ 算法脱水</button>
+        <button id="btnDuel" class="ghost small" title="出题对赌：AI 当竞赛出题人先出题，你提算法构想，它再揭晓作者做法对比评判">⚔ 出题对赌</button>
         <button id="btnReadalong" class="ghost small" title="陪读：设定本部分为目标，读到末页自动邀请复盘">🚶 陪读:关</button>
         <button id="btnBookmap" class="ghost small" title="让 AI 把这本书拆成带依赖关系的知识节点">🗺 拆书</button>
         <span class="sep"></span>
@@ -126,6 +128,7 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
             <label class="check"><input type="checkbox" id="exploreNotes" checked> 检索我的 Obsidian 笔记作背景</label>
           </div>
           <button id="btnExploreStart" class="primary">开始探索</button>
+          <button id="btnFindTopic" class="ghost" title="让 AI 筛出 3 个『有硬计算瓶颈、信噪比高、不靠湿实验』的前沿方向">🎯 帮我找硬核方向</button>
           <div id="exploreHits" class="hidden"></div>
         </div>
       </div>
@@ -179,6 +182,7 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'li
   <button data-act="ask"  title="就这段向我提问">💬</button>
   <button data-act="note" title="高亮 + 笔记">📝</button>
   <button data-act="translate" title="划段翻译：中→英 / 英→中，术语保留，译文可存为批注">🌐</button>
+  <button data-act="code" title="玩具代码：把这段公式/描述变成 30 行以内可直接运行的 Python Demo">⟨/⟩</button>
 </div>
 <div id="colorPalette" class="hidden"></div>
 <!-- 批注管理浮条（点击高亮块弹出） -->
