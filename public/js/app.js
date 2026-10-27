@@ -123,7 +123,7 @@ SR.library = {
             title: it.path,
             onclick: () => SR.reader.open(it.path),
           },
-            SR.el('div', { class: 't' }, '📕 ' + it.title),
+            SR.el('div', { class: 't' }, it.title),
             SR.el('div', { class: 'm' }, `读到 p.${it.lastPage || 1} / ${it.pages || '?'} · ${SR.fmtTime(it.at)}`),
           ));
         }
@@ -257,7 +257,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v47.17-表格渲染';
+  SR.VERSION = 'v47.18-Claude视觉升级';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#d97757;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
