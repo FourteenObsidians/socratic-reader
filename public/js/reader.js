@@ -289,18 +289,41 @@ SR.reader = {
   },
   _somaticAlert() {
     try {
-      if (this._somaticEl) { this._somaticEl.remove(); }
-      const overlay = SR.el('div', { class: 'milestone somatic' },
-        SR.el('div', { class: 'milestone-inner' },
-          SR.el('div', { class: 'milestone-kicker' }, '身体复位'),
-          SR.el('div', { class: 'milestone-title' }, '你已经推演了 40 分钟'),
-          SR.el('div', { class: 'milestone-sub' }, '请立刻喝 300ml 水，起身活动，让眼睛离开屏幕。'),
-          SR.el('div', { class: 'milestone-meta' }, '闭眼 30 秒，再决定是否继续'),
-          SR.el('button', { class: 'primary small', style: 'margin-top:16px', onclick: () => { overlay.remove(); this._somaticEl = null; this._somaticBreaker(); } }, '好，继续 40 分钟')));
+      this._somaticClose();                       // 先清掉旧的，防叠层
+      const overlay = SR.el('div', { class: 'milestone somatic' });
+      const close = () => this._somaticClose(true);
+      overlay.appendChild(SR.el('div', { class: 'milestone-inner' },
+        SR.el('div', { class: 'milestone-kicker' }, '身体复位'),
+        SR.el('div', { class: 'milestone-title' }, '你已经推演了 40 分钟'),
+        SR.el('div', { class: 'milestone-sub' }, '请立刻喝 300ml 水，起身活动，让眼睛离开屏幕一会儿。'),
+        SR.el('div', { class: 'milestone-meta' }, '闭眼 30 秒，再决定是否继续'),
+        SR.el('div', { class: 'somatic-ops' },
+          SR.el('button', { class: 'primary small', onclick: close }, '好，继续 40 分钟'),
+          SR.el('button', { class: 'ghost small', onclick: close }, '稍后再说'))));
+      /* 点遮罩空白处也能关 */
+      overlay.addEventListener('pointerdown', (ev) => {
+        if (!ev.target.closest || !ev.target.closest('.milestone-inner')) close();
+      });
+      /* Esc 关闭 */
+      this._somaticEsc = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };
+      document.addEventListener('keydown', this._somaticEsc, true);
       this._somaticEl = overlay;
       document.body.appendChild(overlay);
       requestAnimationFrame(() => overlay.classList.add('show'));
+      /* 兜底：90 秒后自动关闭，避免任何意外把人卡住 */
+      this._somaticAuto = setTimeout(() => this._somaticClose(true), 90 * 1000);
     } catch { /* ignore */ }
+  },
+  _somaticClose(restart) {
+    if (this._somaticAuto) { clearTimeout(this._somaticAuto); this._somaticAuto = null; }
+    if (this._somaticEsc) { document.removeEventListener('keydown', this._somaticEsc, true); this._somaticEsc = null; }
+    const el = this._somaticEl;
+    this._somaticEl = null;
+    if (el) {
+      el.classList.remove('show');
+      setTimeout(() => { try { el.remove(); } catch { /* gone */ } }, 320);
+    }
+    if (restart) this._somaticBreaker();          // 关闭后重新计 40 分钟
   },
 
   currentPage() {

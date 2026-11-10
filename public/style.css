@@ -957,8 +957,14 @@ button.primary:hover, button.ghost:hover { transform: translateY(-1px); }
 #btnFindTopic { margin-top: 4px; }
 
 /* 生理熔断：与里程碑同款全屏，但更克制 */
-.milestone.somatic .milestone-inner { background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px; padding: 36px 44px; box-shadow: var(--shadow-pop); }
+.milestone.somatic { pointer-events: none; }
+.milestone.somatic.show { pointer-events: auto; }   /* 熔断弹窗必须可交互（里程碑庆祝是穿透的） */
+.milestone.somatic .milestone-inner {
+  background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px;
+  padding: 34px 42px; box-shadow: var(--shadow-pop); pointer-events: auto;
+}
 .milestone.somatic .milestone-title { font-size: 24px; }
+.milestone.somatic .somatic-ops { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
 
 /* ============ 浮层缩放把手（速查卡 / 玩具代码 / 翻译卡 / 笔记卡） ============ */
 .rs-handle { position: absolute; z-index: 6; }
