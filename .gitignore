@@ -19,3 +19,4 @@ android/build/
 android/debug.keystore
 socratic-reader.apk
 public/socratic-reader.apk
+socratic-reader.apk.idsig
