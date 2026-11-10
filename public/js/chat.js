@@ -109,8 +109,33 @@ SR.chat = {
     if (on && !was) SR.toast('闭卷复盘：PDF 已蒙上毛玻璃——先凭记忆作答，需要核对再点「👁 偷看」', 'info', 5000);
   },
 
+  /* 材料超限分段读取：把当前部分剩余的页再发一段 */
+  async continueMaterial() {
+    const s = SR.state.session; const d = SR.state.doc;
+    if (!s || !d || !s.context) return;
+    const from = (s._matSentTo || 0) + 1;
+    const to = Number.isFinite(s._matTotalTo) ? s._matTotalTo : (s.context.to || d.pages);
+    if (!from || from > to) { SR.toast('这段材料已经全部发送过了'); return; }
+    const part = { id: 'cont' + from, title: `${s.context.partTitle || s.context.title || ''} 续 p.${from}–${to}`, from, to };
+    const pg = SR.progress('material', `📥 续读材料 · p.${from}–${to}`);
+    try {
+      const mat = await SR.reader.getPartMaterial(part);
+      if (!mat.text) { pg.fail('这段没有可提取的文本'); return; }
+      pg.done(`已提取 ${(mat.text.length / 1000).toFixed(1)}k 字`, 1200);
+      this.sendMaterial(`【材料·续】\n标题：${d.title}\n页码：p.${from}–${to}\n\n${SR.matBlock(mat.text)}\n\n（这是上一段材料的续篇：接着分析，已讲过的结论不要重复；若前面报告里有「需补读 p.X–Y」，现在补上。）`, mat.images || []);
+    } catch (e) { pg.fail('提取失败：' + (e.message || e)); }
+  },
+
   renderChips(mode) {
     const box = document.getElementById('chatChips');
+    const sess = SR.state.session;
+    /* 材料被截断时，在 chips 末尾加「继续下一段」 */
+    const addContinueChip = (defsArr) => {
+      if (!sess || !sess._matSentTo) return defsArr;
+      const to = Number.isFinite(sess._matTotalTo) ? sess._matTotalTo : null;
+      if (!to || sess._matSentTo >= to) return defsArr;
+      return defsArr.concat([[`📄 继续下一段（p.${sess._matSentTo + 1}–${to}）`, () => this.continueMaterial()]]);
+    };
     const defs = {
       part: [
         ['🧭 深挖', () => this.send('（指令）请切换到深挖模式：从第一性原理、哲学基础、数学基础三个维度继续向我提问。')],
@@ -152,7 +177,7 @@ SR.chat = {
       ],
       done: [],
     };
-    const list = defs[mode] || [];
+    const list = addContinueChip(defs[mode] || []);
     box.innerHTML = '';
     for (const [label, fn] of list) box.appendChild(SR.el('button', { class: 'chip', onclick: fn }, label));
     box.classList.toggle('hidden', !list.length);
@@ -816,6 +841,7 @@ ${r.content}`
       '- 对「半懂不懂」有恐慌：任何没讲清的模块，必须显式标注边界——要么写「这里是黑盒，算法学者无须深究」，要么写「材料未给出」，绝不让用户悬在模糊里。',
       '- 生理易耗：输出低熵、极简、密度优先；不要铺垫、不要客套、不要注水、不要仪式感开场白。',
       '- 东西合流哲学：算法 / 数学核心 = 白盒，剖到 100% 透彻供其玩味；生物背景 = 黑盒，一句话事实记录即可。',
+      '- 材料可能被截断（会标注「仅提供到第 N 页」）：只分析已提供的页；对未提供的页【严禁】说「材料未给出」（那是所有页都没给的说法），应在结尾单独列出「需补读 p.X–Y」，让用户分段再看。',
     ].join('\n');
   },
 
@@ -931,7 +957,7 @@ ${r.content}`
       text: mat.text, highlights: mat.highlights,
     };
     this.newSession('wit', `🔬 ${d.title} · WIT 精读`, context, system);
-    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【正文（可能截断）】\n${mat.text.slice(0, 40000)}\n\n【我的批注（读时标注的关注点，优先围绕它们拷问）】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n【输出格式契约（最高优先级）】\n你的回复第一行必须严格是这一行（单独成行，页码和短语替换为实际值）：\n@p页码|开头短语→结尾短语\n开头短语逐字复制本轮分析段落第一句的开头 8–20 个英文字符；结尾短语逐字复制其最后一句的结尾 8–20 个英文字符（段落很短时可省略箭头和结尾短语）。\n例如本轮分析第 25 页起的三段，以 “Embeddings are the foundation...” 开始、以 “…become geometric ones.” 结束，第一行就是：\n@p25|Embeddings are the foundation→become geometric ones\n此行用于界面定位并高亮，缺失或范围对不上会让高亮文不对题。第二行起才是你的分析与提问。\n\n现在开始 WIT 精读：骨架 → 第一个拷问问题。`, mat.images || []);
+    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n${SR.matBlock(mat.text)}\n\n【我的批注（读时标注的关注点，优先围绕它们拷问）】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n【输出格式契约（最高优先级）】\n你的回复第一行必须严格是这一行（单独成行，页码和短语替换为实际值）：\n@p页码|开头短语→结尾短语\n开头短语逐字复制本轮分析段落第一句的开头 8–20 个英文字符；结尾短语逐字复制其最后一句的结尾 8–20 个英文字符（段落很短时可省略箭头和结尾短语）。\n例如本轮分析第 25 页起的三段，以 “Embeddings are the foundation...” 开始、以 “…become geometric ones.” 结束，第一行就是：\n@p25|Embeddings are the foundation→become geometric ones\n此行用于界面定位并高亮，缺失或范围对不上会让高亮文不对题。第二行起才是你的分析与提问。\n\n现在开始 WIT 精读：骨架 → 第一个拷问问题。`, mat.images || []);
   },
 
   /* ---------- 框架优先精读：先搭全貌、用户导航、卡住才缝补（不逐问、不从 intro 起） ---------- */
@@ -981,7 +1007,7 @@ ${r.content}`
       text: mat.text, highlights: mat.highlights,
     };
     this.newSession('frame', `🗺 ${d.title} · 框架优先`, context, system);
-    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【正文（可能截断）】\n${mat.text.slice(0, 40000)}\n\n【我的批注（读时标注的关注点）】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n现在开始：第一轮只输出「论文地图」，一个问题都不问，然后停住等我导航。`, mat.images || []);
+    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n${SR.matBlock(mat.text)}\n\n【我的批注（读时标注的关注点）】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n现在开始：第一轮只输出「论文地图」，一个问题都不问，然后停住等我导航。`, mat.images || []);
   },
 
   async startGuidedReading(partArg) {
@@ -1074,7 +1100,7 @@ ${r.content}`
     this.newSession('guide', `🎧 ${d.title} · 带读`, context, system);
     const doneSrc = (d.bookmap && d.bookmap.nodes && d.bookmap.nodes.length) ? d.bookmap.nodes : d.parts;
     const doneList = doneSrc.filter((n) => d.partsDone && d.partsDone[n.id]).map((n) => `${n.id} ${n.title}（p.${n.from}–${n.to}）`).join('；');
-    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【用户已学过的部分（用于串联，不要重复讲）】\n${doneList || '（这是第一个部分）'}\n\n【正文（可能截断）】\n${mat.text.slice(0, 40000)}\n\n【我的批注（读时标注的关注点，优先围绕它们提问）】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n【输出格式契约（最高优先级）】\n你的回复第一行必须严格是这一行（单独成行，页码和短语替换为实际值）：\n@p页码|开头短语→结尾短语\n两个短语划定的范围必须恰好是【你本轮要讲解的那段文字】：开头短语逐字复制它第一句的开头 8–20 个英文字符；结尾短语逐字复制它最后一句的结尾 8–20 个英文字符（块很短时可省略箭头和结尾短语）。只讲两段就标两段，不要多框。\n例如本轮讲第 25 页起的三段，以 “Embeddings are the foundation...” 开始、以 “…become geometric ones.” 结束，第一行就是：\n@p25|Embeddings are the foundation→become geometric ones\n此行用于界面定位并高亮整块 PDF，缺失或范围对不上都会让高亮文不对题。第二行起才是你的介绍与提问。\n\n现在开始带读：从第一块开始，先输出位置标记行。`, mat.images || []);
+    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【用户已学过的部分（用于串联，不要重复讲）】\n${doneList || '（这是第一个部分）'}\n\n${SR.matBlock(mat.text)}\n\n【我的批注（读时标注的关注点，优先围绕它们提问）】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n【输出格式契约（最高优先级）】\n你的回复第一行必须严格是这一行（单独成行，页码和短语替换为实际值）：\n@p页码|开头短语→结尾短语\n两个短语划定的范围必须恰好是【你本轮要讲解的那段文字】：开头短语逐字复制它第一句的开头 8–20 个英文字符；结尾短语逐字复制它最后一句的结尾 8–20 个英文字符（块很短时可省略箭头和结尾短语）。只讲两段就标两段，不要多框。\n例如本轮讲第 25 页起的三段，以 “Embeddings are the foundation...” 开始、以 “…become geometric ones.” 结束，第一行就是：\n@p25|Embeddings are the foundation→become geometric ones\n此行用于界面定位并高亮整块 PDF，缺失或范围对不上都会让高亮文不对题。第二行起才是你的介绍与提问。\n\n现在开始带读：从第一块开始，先输出位置标记行。`, mat.images || []);
   },
 
   /* 发送带可选图片的材料消息：有图时构造 multimodal content（数组），
@@ -1082,6 +1108,13 @@ ${r.content}`
   async sendMaterial(text, images) {
     const s = SR.state.session;
     if (!s || this.busy) return;
+    /* 记录材料覆盖到第几页：供「继续下一段」使用 */
+    try {
+      const pgs = [...String(text).matchAll(/\[p\.(\d+)\]/g)].map((m) => Number(m[1]));
+      if (pgs.length) s._matSentTo = Math.max(...pgs);
+      if (s.context && Number.isFinite(s.context.to)) s._matTotalTo = s.context.to;
+      this.renderChips(s.mode);
+    } catch { /* ignore */ }
     if (!images || !images.length) return this.send(text);
     const parts = [{ type: 'text', text: text + '\n\n【附图】下列图像是本部分含图表页面的截屏，讲解涉及图表/公式/架构图时以此为准并注明页码。' }];
     for (const im of images) parts.push({ type: 'image_url', image_url: { url: im.b64, page: im.page } });
@@ -1143,7 +1176,7 @@ ${r.content}`
     const weakList = (d.weakPoints && d.weakPoints.length)
       ? d.weakPoints.map((w) => `- ${w.text}（源自：${w.src || '此前复盘'}）`).join('\n')
       : '';
-    this.send(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【已完成并复盘过的部分（你已知用户学过这些，可承接串联但不要重复问）】\n${doneList || '（这是第一个复盘的部分）'}\n\n${weakList ? `【你记得用户曾卡住的点（温故式追问用，见系统提示）】\n${weakList}\n\n` : ''}【正文（可能截断）】\n${mat.text.slice(0, 40000)}\n\n【我的批注】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n请开始你的第一个问题。`);
+    this.send(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【已完成并复盘过的部分（你已知用户学过这些，可承接串联但不要重复问）】\n${doneList || '（这是第一个复盘的部分）'}\n\n${weakList ? `【你记得用户曾卡住的点（温故式追问用，见系统提示）】\n${weakList}\n\n` : ''}${SR.matBlock(mat.text)}\n\n【我的批注】\n${mat.highlights.length ? mat.highlights.join('\n') : '（无）'}\n\n请开始你的第一个问题。`);
   },
 
   /* ---------- 场景二：选段提问 ---------- */
@@ -1221,7 +1254,7 @@ ${r.content}`
     this.newSession('dehydrate', `⚙ ${d.title} · 算法脱水`, {
       brief: `⚙ 算法脱水 · p.${part.from}–${part.to}`, file: d.path, title: d.title, partTitle: part.title, from: part.from, to: part.to,
     }, system);
-    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【正文（可能截断；若截断请在报告里注明）】\n${mat.text.slice(0, 40000)}\n\n现在开始两幕解构：先案例入局（故事），转场点破，再算法核心（符号）。`, mat.images || []);
+    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n${SR.matBlock(mat.text)}\n\n现在开始两幕解构：先案例入局（故事），转场点破，再算法核心（符号）。`, mat.images || []);
   },
 
   /* ---------- 工具二：出题对赌（AI 出题 → 你提方案 → 揭晓作者做法对比） ---------- */
@@ -1265,7 +1298,7 @@ ${r.content}`
     this.newSession('duel', `⚔ ${d.title} · 出题对赌`, {
       brief: `⚔ 出题对赌 · p.${part.from}–${part.to}`, file: d.path, title: d.title, partTitle: part.title, from: part.from, to: part.to,
     }, system);
-    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n【正文（可能截断）】\n${mat.text.slice(0, 40000)}\n\n现在开始第 1 轮：只出题，不给任何提示。`, mat.images || []);
+    this.sendMaterial(`【材料】\n标题：${d.title}\n部分：${part.title}（第 ${part.from}–${part.to} 页）\n\n${SR.matBlock(mat.text)}\n\n现在开始第 1 轮：只出题，不给任何提示。`, mat.images || []);
   },
 
   /* ---------- 工具四：研究方向过滤（找有硬计算瓶颈的题） ---------- */
@@ -1694,7 +1727,7 @@ ${r.content}`
       brief: `🧠 ${SR.esc(book.title)} · ${SR.esc(part.title)}`, reviewKind: 'part',
       part, bookPath: book.path, bookTitle: book.title, material,
     }, system);
-    this.send(`我想回顾已学过的部分：《${book.title}》${part.title}（第 ${part.from}–${part.to} 页）\n\n${material ? `【该部分原文（校验依据，不要直接复述）】\n${material.slice(0, 40000)}\n\n` : ''}请开始：先让我凭记忆梳理这一部分的主线，再逐点追问校验。`);
+    this.send(`我想回顾已学过的部分：《${book.title}》${part.title}（第 ${part.from}–${part.to} 页）\n\n${material ? `【该部分原文（校验依据，不要直接复述）】\n${SR.matBlock(material)}\n\n` : ''}请开始：先让我凭记忆梳理这一部分的主线，再逐点追问校验。`);
   },
 
   /* ---------- 确认对话框 ---------- */

@@ -125,6 +125,29 @@ SR.draggable = (el, handle) => {
   handle.addEventListener('pointerdown', onDown);
 };
 
+/* ---------- 材料容量：按页边界截断 + 生成带覆盖范围的材料块 ----------
+   默认上限 12 万字符（模型实测可吃 16 万）；可用 config.llm.materialChars 覆盖。
+   截断点选在 [p.N] 页边界，避免把半页内容切碎。 */
+SR.capMaterial = (text, limit) => {
+  const raw = String(text || '');
+  const max = Number(limit) || Number((SR.state && SR.state.config && SR.state.config.llm && SR.state.config.llm.materialChars)) || 120000;
+  if (raw.length <= max) {
+    const pages = [...raw.matchAll(/\[p\.(\d+)\]/g)].map((m) => Number(m[1]));
+    return { text: raw, truncated: false, from: pages[0], to: pages[pages.length - 1] };
+  }
+  const cut = raw.lastIndexOf('\n[p.', max);
+  const t = cut > max * 0.55 ? raw.slice(0, cut) : raw.slice(0, max);
+  const pages = [...t.matchAll(/\[p\.(\d+)\]/g)].map((m) => Number(m[1]));
+  return { text: t, truncated: true, from: pages[0], to: pages[pages.length - 1] };
+};
+SR.matBlock = (text, limit) => {
+  const cap = SR.capMaterial(text, limit);
+  if (!cap.truncated) return `【正文（完整）】\n${cap.text}`;
+  return `【正文（部分提供）】本次材料较长，仅提供到第 ${cap.to} 页（原文共 ${cap.text.length.toLocaleString()} 字符上限）`
+    + `；第 ${cap.to} 页之后的内容【没有提供给你】——严禁对未提供的页下结论，也不要说「材料未给出」，`
+    + `请在报告结尾单独列出「需补读 p.${cap.to + 1}–后续」让用户分段再看。\n${cap.text}`;
+};
+
 /* ---------- 浮层缩放：拖边/拖角调整大小（宽度可超过公式行宽，免横向滑动） ----------
    支持 e/w/s/se/sw 五个把手；记住上次尺寸（localStorage，按 key 区分）；夹在视口内。 */
 SR.resizable = (el, opts = {}) => {
