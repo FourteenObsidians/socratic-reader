@@ -1346,6 +1346,7 @@ SR.reader = {
     document.body.appendChild(card);
     this._ncEl = card;
     SR.draggable(card, card.querySelector('.nc-head'));   /* 标题栏拖动 */
+    SR.resizable(card, { key: 'noteCard', minW: 260, minH: 160 });
     /* 定位：锚点上方优先，放不下放下方；水平夹在视口内 */
     card.style.visibility = 'hidden';
     const r = anchor || { top: window.innerHeight / 2, bottom: window.innerHeight / 2, left: window.innerWidth / 2 - 140, width: 0 };
@@ -1468,6 +1469,7 @@ SR.reader = {
     card.style.top = Math.max(10, Math.min(window.innerHeight - 240, (r.bottom || 100) + 10)) + 'px';
     this._trEl = card;
     SR.draggable(card, card.querySelector('.tr-head'));   /* 标题栏拖动 */
+    SR.resizable(card, { key: 'trCard', minW: 320, minH: 180 });
 
     const dst = card.querySelector('.tr-dst');
     try {

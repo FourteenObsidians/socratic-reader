@@ -257,7 +257,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v48.1-两幕解构';
+  SR.VERSION = 'v48.2-浮层缩放';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#d97757;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -356,6 +356,35 @@ SR.zotero = {
   document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click', () => SR.setMode(b.dataset.mode)));
   document.getElementById('btnSettings').addEventListener('click', () => SR.settings.open());
   document.getElementById('btnCards').addEventListener('click', () => SR.cards.togglePanel()); // 制卡功能已下线：按钮隐藏，逻辑保留（学习记录在 Obsidian 仓库制卡）
+  /* AI 面板宽度拖拽：拖左边缘改 --ai-w，双击复位，尺寸记忆 */
+  {
+    const rz = document.getElementById('aiResizer');
+    const root = document.documentElement;
+    const MIN = 320, MAX = () => Math.min(760, window.innerWidth - 300);
+    const applyW = (w) => {
+      const v = Math.max(MIN, Math.min(MAX(), w));
+      root.style.setProperty('--ai-w', v + 'px');
+      try { localStorage.setItem('sr_ai_w', String(Math.round(v))); } catch { /* ignore */ }
+    };
+    try { const saved = Number(localStorage.getItem('sr_ai_w')); if (saved) applyW(saved); } catch { /* ignore */ }
+    rz.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      ev.preventDefault();
+      rz.classList.add('dragging');
+      const move = (e2) => applyW(window.innerWidth - e2.clientX);
+      const up = () => {
+        rz.classList.remove('dragging');
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+    rz.addEventListener('dblclick', () => applyW(420));
+    window.addEventListener('resize', () => {
+      try { const w = Number(localStorage.getItem('sr_ai_w')); if (w) applyW(w); } catch { /* ignore */ }
+    });
+  }
   document.getElementById('btnAiToggle').addEventListener('click', () => {
     document.body.classList.toggle('ai-hidden');
   });

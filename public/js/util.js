@@ -125,6 +125,62 @@ SR.draggable = (el, handle) => {
   handle.addEventListener('pointerdown', onDown);
 };
 
+/* ---------- 浮层缩放：拖边/拖角调整大小（宽度可超过公式行宽，免横向滑动） ----------
+   支持 e/w/s/se/sw 五个把手；记住上次尺寸（localStorage，按 key 区分）；夹在视口内。 */
+SR.resizable = (el, opts = {}) => {
+  if (!el) return;
+  const minW = opts.minW || 300, minH = opts.minH || 140;
+  const maxW = () => Math.min(opts.maxW || 1600, window.innerWidth - 20);
+  const maxH = () => Math.min(opts.maxH || 1200, window.innerHeight - 20);
+  const key = opts.key ? 'sr_size_' + opts.key : '';
+  if (key) {
+    try {
+      const j = JSON.parse(localStorage.getItem(key) || 'null');
+      if (j && j.w) { el.style.width = Math.round(Math.min(j.w, maxW())) + 'px'; if (j.h) el.style.height = Math.round(Math.min(j.h, maxH())) + 'px'; }
+    } catch { /* ignore */ }
+  }
+  const save = () => {
+    if (!key) return;
+    try { const r = el.getBoundingClientRect(); localStorage.setItem(key, JSON.stringify({ w: Math.round(r.width), h: Math.round(r.height) })); } catch { /* ignore */ }
+  };
+  const specs = [['e', 'ew-resize'], ['w', 'ew-resize'], ['s', 'ns-resize'], ['se', 'nwse-resize'], ['sw', 'nesw-resize']];
+  for (const [dir, cursor] of specs) {
+    const h = document.createElement('div');
+    h.className = 'rs-handle rs-' + dir;
+    h.style.cursor = cursor;
+    el.appendChild(h);
+    h.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const r = el.getBoundingClientRect();
+      const baseW = r.width, baseH = r.height, baseL = r.left;
+      const sx = ev.clientX, sy = ev.clientY;
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+      el.style.left = baseL + 'px'; el.style.width = baseW + 'px';
+      el.classList.add('resizing');
+      const onMove = (e2) => {
+        const dx = e2.clientX - sx, dy = e2.clientY - sy;
+        if (dir.includes('e')) el.style.width = Math.max(minW, Math.min(maxW(), baseW + dx)) + 'px';
+        if (dir.includes('w')) {
+          const w = Math.max(minW, Math.min(maxW(), baseW - dx));
+          el.style.width = w + 'px';
+          el.style.left = Math.max(4, baseL + (baseW - w)) + 'px';
+        }
+        if (dir.includes('s')) el.style.height = Math.max(minH, Math.min(maxH(), baseH + dy)) + 'px';
+        e2.preventDefault();
+      };
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        el.classList.remove('resizing');
+        save();
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+    });
+  }
+};
+
 /* ---------- 极简 Markdown 渲染（先转义，安全优先；KaTeX 公式） ---------- */
 SR.tex = (tex, display) => {
   try {

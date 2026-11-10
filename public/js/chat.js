@@ -365,6 +365,7 @@ ${r.content}`
     this._codeCard = card;
     document.body.appendChild(card);
     SR.draggable(card, card.querySelector('.tc-head'));
+    SR.resizable(card, { key: 'codeCard', minW: 360, minH: 220 });
     card.style.right = '24px'; card.style.top = '76px'; card.style.width = '480px';
     const sys = [
       '你是「玩具代码还原器」。把用户给的公式 / 段落，变成一份**纯内存、完全自包含、可直接运行**的最小 Demo。',
@@ -462,6 +463,7 @@ ${r.content}`
     card.style.zIndex = 96 + depth;
     T.el = card;
     SR.draggable(card, card.querySelector('.tc-head'));   /* 标题栏拖动，不挡正文 */
+    SR.resizable(card, { key: 'termCard', minW: 320, minH: 180 });   /* 拖边缩放：长公式不必横滑 */
     /* 卡片内选中文字 → 递归再开一张（术语链向下生长） */
     card.addEventListener('mouseup', () => {
       setTimeout(() => {

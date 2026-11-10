@@ -219,7 +219,7 @@ button.ghost.small { padding: 4px 9px; font-size: 12px; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ---------- 主布局 ---------- */
-#main { flex: 1; display: grid; grid-template-columns: 280px 1fr 420px; min-height: 0; }
+#main { flex: 1; display: grid; grid-template-columns: 280px 1fr var(--ai-w, 420px); min-height: 0; }
 body.ai-hidden #main { grid-template-columns: 280px 1fr 0; }
 
 /* 圈图提问：模式光标 + 拖拽虚线框 */
@@ -959,3 +959,38 @@ button.primary:hover, button.ghost:hover { transform: translateY(-1px); }
 /* 生理熔断：与里程碑同款全屏，但更克制 */
 .milestone.somatic .milestone-inner { background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px; padding: 36px 44px; box-shadow: var(--shadow-pop); }
 .milestone.somatic .milestone-title { font-size: 24px; }
+
+/* ============ 浮层缩放把手（速查卡 / 玩具代码 / 翻译卡 / 笔记卡） ============ */
+.rs-handle { position: absolute; z-index: 6; }
+.rs-e { top: 12px; bottom: 12px; right: -5px; width: 9px; }
+.rs-w { top: 12px; bottom: 12px; left: -5px; width: 9px; }
+.rs-s { left: 12px; right: 12px; bottom: -5px; height: 9px; }
+.rs-se { width: 18px; height: 18px; right: -4px; bottom: -4px; }
+.rs-sw { width: 18px; height: 18px; left: -4px; bottom: -4px; }
+.rs-se::after, .rs-sw::after {
+  content: ''; position: absolute; bottom: 6px; width: 7px; height: 7px; opacity: .45;
+  border-bottom: 2px solid var(--muted);
+}
+.rs-se::after { right: 6px; border-right: 2px solid var(--muted); border-radius: 0 0 2px 0; }
+.rs-sw::after { left: 6px; border-left: 2px solid var(--muted); border-radius: 0 0 0 2px; }
+.termCard.resizing, .tr-card.resizing, .noteCard.resizing { user-select: none; }
+/* 缩放后：内容自适应，长公式优先换行/横向兜底滚动 */
+.termCard .tc-thread { max-height: none; flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; }
+.termCard .tc-answer { min-width: 0; overflow-x: auto; }
+.termCard .tc-answer .katex-display { overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
+.tr-card .tr-dst { min-width: 0; overflow-x: auto; }
+.tr-card .katex-display { overflow-x: auto; }
+.noteCard { font-size: 13px; }
+
+
+/* ============ AI 面板宽度可拖拽 ============ */
+#aiResizer {
+  position: fixed; top: 54px; bottom: 0; width: 10px; z-index: 70;
+  cursor: col-resize; background: transparent;
+}
+#aiResizer::after {
+  content: ''; position: absolute; top: 0; bottom: 0; right: 4px; width: 2px;
+  background: transparent; transition: background .16s ease;
+}
+#aiResizer:hover::after, #aiResizer.dragging::after { background: rgba(var(--accent-rgb), .45); }
+body.ai-full #aiResizer, body.ai-hidden #aiResizer { display: none; }
