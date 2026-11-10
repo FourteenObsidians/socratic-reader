@@ -16,6 +16,7 @@ SR.chat = {
       messages: [], // {role:'user'|'assistant', content}
     };
     document.getElementById('chatTitle').textContent = title;
+    if (SR.mobilePane) SR.mobilePane('ai');   // 移动端：开新会话自动切到对话面板
     const ctx = document.getElementById('chatContext');
     if (context && context.brief) {
       ctx.innerHTML = SR.esc(context.brief);

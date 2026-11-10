@@ -1000,3 +1000,97 @@ button.primary:hover, button.ghost:hover { transform: translateY(-1px); }
 }
 #aiResizer:hover::after, #aiResizer.dragging::after { background: rgba(var(--accent-rgb), .45); }
 body.ai-full #aiResizer, body.ai-hidden #aiResizer { display: none; }
+
+/* ============ 移动端响应式（≤860px）：单栏 + 底部导航 ============ */
+#mobileNav { display: none; }
+
+@media (max-width: 860px) {
+  /* 顶栏：精简为 48px，模式横向滚动，隐藏非核心按钮 */
+  #topbar { height: 48px; flex: 0 0 48px; gap: 8px; padding: 0 10px; }
+  .brand { font-size: 13px; letter-spacing: 0; max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
+  #flowHud { display: none; }
+  #modes { flex: 1; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #modes::-webkit-scrollbar { display: none; }
+  .mode-btn { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
+  .doc-title { display: none; }
+  .top-actions { gap: 2px; }
+  .top-actions button.ghost { width: 30px; height: 30px; font-size: 13px; }
+  #btnAccent, #btnTheme { display: none; }        /* 手机上位置紧张，主题方向留给设置 */
+
+  /* 主体：单栏 + 三面板切换 */
+  #main { display: block; position: relative; padding-bottom: 58px; }
+  #sidebar, #center, #aiPanel { position: absolute; inset: 0; display: none; min-width: 0; }
+  body.m-pane-side #sidebar { display: flex; }
+  body.m-pane-read #center { display: flex; }
+  body.m-pane-ai #aiPanel { display: flex; border-left: none; }
+  #aiResizer { display: none; }
+  body.ai-full #main { padding-bottom: 0; }
+
+  /* 底部导航 */
+  #mobileNav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+    width: 100%; max-width: 100vw; box-sizing: border-box; overflow: hidden;
+    height: 58px; padding-bottom: env(safe-area-inset-bottom);
+    background: var(--panel); border-top: 1px solid var(--hairline);
+  }
+  #mobileNav button {
+    flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    background: transparent; border: none; color: var(--muted); font-size: 11px; padding: 6px 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #mobileNav button.active { color: var(--accent); }
+  #mobileNav .mn-ico { font-size: 17px; line-height: 1; }
+  #mobileNav button.active .mn-ico { transform: translateY(-1px); }
+
+  /* 阅读工具条：单行横向滚动 */
+  #readerToolbar { flex-wrap: nowrap; overflow-x: auto; padding: 8px 10px; gap: 6px; scrollbar-width: none; }
+  #readerToolbar::-webkit-scrollbar { display: none; }
+  #readerToolbar select { max-width: 150px; }
+  #readerToolbar .sep { display: none; }
+  #reviewBanner { padding: 8px 10px; font-size: 12.5px; }
+
+  /* 侧栏 tabs 更紧凑 */
+  .side-tabs { padding: 6px 6px 0; }
+  .side-tab { font-size: 12px; padding: 6px 0 8px; }
+
+  /* 对话区：输入框贴合键盘 */
+  #chatHeader { padding: 10px 12px; }
+  #chatMsgs { padding: 12px 12px 4px; }
+  .msg .bubble { font-size: 13.5px; }
+  #chatInputBar { padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); }
+  #chatInput { min-height: 52px; font-size: 14px; }
+
+  /* 浮层卡片：手机全宽 */
+  .termCard, .tr-card, .noteCard, .codeCard {
+    left: 8px !important; right: 8px !important; width: auto !important;
+    max-width: none !important; max-height: 72vh;
+  }
+  .rs-handle { display: none; }                    /* 触屏下不显示缩放把手 */
+
+  /* 书库卡片单列 */
+  .recent-item { min-height: 0; }
+  .review-wrap { padding: 18px 14px; }
+  .explore-card { padding: 20px 16px; border-radius: 12px; }
+}
+
+/* 超窄屏（≤380px）进一步压缩 */
+@media (max-width: 380px) {
+  .brand { display: none; }
+  .mode-btn { padding: 5px 8px; font-size: 11.5px; }
+}
+
+/* 移动端：侧栏 tabs 可横向滚动，避免“批注”被挤掉 */
+@media (max-width: 860px) {
+  .side-tabs { overflow-x: auto; scrollbar-width: none; }
+  .side-tabs::-webkit-scrollbar { display: none; }
+  .side-tab { flex: 0 0 auto; padding: 7px 14px 9px; }
+}
+
+/* 移动端：选区工具条加大触摸目标 */
+@media (max-width: 860px) {
+  #selToolbar { gap: 2px; padding: 5px; }
+  #selToolbar button { min-width: 40px; height: 40px; font-size: 17px; display: inline-flex; align-items: center; justify-content: center; }
+  #colorPalette .swatch { width: 34px; height: 34px; }
+  /* 顶栏模式区右侧渐隐，提示可横向滚动 */
+  #modes { -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent 100%); mask-image: linear-gradient(90deg, #000 88%, transparent 100%); }
+}

@@ -20,7 +20,18 @@ SR.setMode = function (m) {
   show('viewExplore', m === 'explore');
   show('viewReview', m === 'review');
   if (m === 'review' && typeof SR.renderReviewPool === 'function') SR.renderReviewPool();
+  /* 移动端：阅读类模式 → 正文面板；书库 → 文件面板 */
+  if (SR.isMobile && SR.isMobile()) SR.mobilePane(m === 'library' ? 'side' : 'read');
   if (SR.persist) SR.persist.save();
+};
+
+/* ---------- 移动端：单栏三面板切换 ---------- */
+SR.isMobile = () => window.matchMedia('(max-width: 860px)').matches;
+SR.mobilePane = (name) => {
+  if (!SR.isMobile()) return;
+  document.body.classList.remove('m-pane-side', 'm-pane-read', 'm-pane-ai');
+  document.body.classList.add('m-pane-' + name);
+  document.querySelectorAll('#mobileNav button').forEach((b) => b.classList.toggle('active', b.dataset.pane === name));
 };
 
 /* ---------- 巩固题池（聚合所有书的待巩固点 + 已学部分） ---------- */
@@ -257,7 +268,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v48.3-熔断可关';
+  SR.VERSION = 'v48.4-移动端适配';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#d97757;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -355,6 +366,12 @@ SR.zotero = {
   /* 顶栏 */
   document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click', () => SR.setMode(b.dataset.mode)));
   document.getElementById('btnSettings').addEventListener('click', () => SR.settings.open());
+  /* 底部导航：切换 文件 / 正文 / 对话 */
+  document.querySelectorAll('#mobileNav button').forEach((b) => {
+    b.addEventListener('click', () => SR.mobilePane(b.dataset.pane));
+  });
+  /* 初始面板：有文档先看正文，否则文件 */
+  if (SR.isMobile()) SR.mobilePane(SR.state.doc ? 'read' : 'side');
   document.getElementById('btnCards').addEventListener('click', () => SR.cards.togglePanel()); // 制卡功能已下线：按钮隐藏，逻辑保留（学习记录在 Obsidian 仓库制卡）
   /* AI 面板宽度拖拽：拖左边缘改 --ai-w，双击复位，尺寸记忆 */
   {

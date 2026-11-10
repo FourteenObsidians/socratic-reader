@@ -43,6 +43,12 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'da
   <div id="accentPalette" class="hidden"></div>
 </header>
 
+<nav id="mobileNav">
+  <button data-pane="side" class="active"><span class="mn-ico">📁</span><span class="mn-txt">文件</span></button>
+  <button data-pane="read"><span class="mn-ico">📖</span><span class="mn-txt">正文</span></button>
+  <button data-pane="ai"><span class="mn-ico">🤖</span><span class="mn-txt">对话</span></button>
+</nav>
+
 <div id="main">
   <aside id="sidebar">
     <div class="side-tabs">

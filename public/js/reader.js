@@ -1196,6 +1196,58 @@ SR.reader = {
       const down = this._engDownXY;
       this._suppressAnnClick = !!(down && Math.hypot(ev.clientX - down[0], ev.clientY - down[1]) > 5);
     });
+    /* ---------- 触屏划选：长按 220ms 进入选择，拖动调范围，松手出工具条 ---------- */
+    let tTimer = 0, tStart = null, tSelecting = false;
+    scroll.addEventListener('touchstart', (ev) => {
+      if (ev.touches.length !== 1) return;
+      const t = ev.touches[0];
+      tStart = { x: t.clientX, y: t.clientY };
+      tSelecting = false;
+      clearTimeout(tTimer);
+      if (!inText(ev.target)) return;
+      tTimer = setTimeout(() => {
+        const c = this._caretAt(tStart.x, tStart.y, 0);
+        if (!c) return;
+        tSelecting = true;
+        this._eng = { active: true, anchor: c, focus: c, lastY: tStart.y, raf: 0 };
+        try { if (navigator.vibrate) navigator.vibrate(12); } catch { /* ignore */ }
+        this._drawSel(this._rangeFromCarets(c, c));
+      }, 220);
+    }, { passive: true });
+
+    scroll.addEventListener('touchmove', (ev) => {
+      const t = ev.touches[0];
+      if (!tSelecting) {
+        if (tStart && Math.hypot(t.clientX - tStart.x, t.clientY - tStart.y) > 8) { clearTimeout(tTimer); tStart = null; }
+        return;                                    // 普通滑动 = 滚动，不干预
+      }
+      ev.preventDefault();                         // 选择中：阻止页面滚动
+      const e = this._eng;
+      if (!e || !e.active) return;
+      const dir = Math.sign(t.clientY - (e.lastY ?? t.clientY));
+      e.lastY = t.clientY;
+      const c = this._caretAt(t.clientX, t.clientY, dir);
+      if (c) e.focus = c;
+      if (!e.raf) e.raf = requestAnimationFrame(() => {
+        e.raf = 0;
+        if (e.active) this._drawSel(this._rangeFromCarets(e.anchor, e.focus));
+      });
+    }, { passive: false });
+
+    scroll.addEventListener('touchend', () => {
+      clearTimeout(tTimer);
+      if (tSelecting) {
+        tSelecting = false;
+        const e = this._eng;
+        if (e && e.active) {
+          e.active = false;
+          if (e.raf) { cancelAnimationFrame(e.raf); e.raf = 0; }
+          this._finishSel(e.anchor, e.focus);
+        }
+      }
+      tStart = null;
+    }, { passive: true });
+
     /* 点击高亮块 → 笔记卡片（有笔记显示内容，无笔记可直接添加） */
     scroll.addEventListener('click', (ev) => {
       if (this._suppressAnnClick) { this._suppressAnnClick = false; return; }
