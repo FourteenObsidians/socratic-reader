@@ -12,3 +12,10 @@ node_modules/
 .DS_Store
 *.log
 public/vendor/
+
+# Android 构建产物
+.android-sdk/
+android/build/
+android/debug.keystore
+socratic-reader.apk
+public/socratic-reader.apk

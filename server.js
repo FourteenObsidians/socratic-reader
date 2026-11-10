@@ -15,7 +15,7 @@ const PUBLIC = path.join(APP_ROOT, 'public');
 const DATA = path.join(APP_ROOT, 'data');
 const CONFIG_PATH = path.join(APP_ROOT, 'config.json');
 const PORT = Number(process.env.PORT || 3777);
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';   // 默认监听所有网卡：手机/局域网可直接访问；本机仍用 127.0.0.1 访问
 
 /* ---------------- 配置 ---------------- */
 const DEFAULT_CONFIG = {
