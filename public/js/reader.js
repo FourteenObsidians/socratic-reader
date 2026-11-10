@@ -48,6 +48,7 @@ SR.reader = {
     };
     document.getElementById('docTitle').textContent = `${SR.state.doc.title} · ${pdf.numPages} 页`;
     SR.setMode('reader');
+    this._somaticBreaker();   // 生理熔断：40 分钟强制休息
     // 重置陪读状态（跨文档不复用）
     this.readalong.on = false;
     this.readalong.goal = null;
@@ -279,6 +280,27 @@ SR.reader = {
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => { if (SR.state.doc === d) this.renderHls(i); }).catch(() => {});
     }
+  },
+
+  /* 生理熔断：低熵保护——连续阅读核心逻辑超 40 分钟，强制弹「喝水 300ml / 身体复位」 */
+  _somaticBreaker() {
+    clearTimeout(this._somaticT);
+    this._somaticT = setTimeout(() => this._somaticAlert(), 40 * 60 * 1000);
+  },
+  _somaticAlert() {
+    try {
+      if (this._somaticEl) { this._somaticEl.remove(); }
+      const overlay = SR.el('div', { class: 'milestone somatic' },
+        SR.el('div', { class: 'milestone-inner' },
+          SR.el('div', { class: 'milestone-kicker' }, '身体复位'),
+          SR.el('div', { class: 'milestone-title' }, '你已经推演了 40 分钟'),
+          SR.el('div', { class: 'milestone-sub' }, '请立刻喝 300ml 水，起身活动，让眼睛离开屏幕。'),
+          SR.el('div', { class: 'milestone-meta' }, '闭眼 30 秒，再决定是否继续'),
+          SR.el('button', { class: 'primary small', style: 'margin-top:16px', onclick: () => { overlay.remove(); this._somaticEl = null; this._somaticBreaker(); } }, '好，继续 40 分钟')));
+      this._somaticEl = overlay;
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add('show'));
+    } catch { /* ignore */ }
   },
 
   currentPage() {
@@ -1525,6 +1547,7 @@ SR.reader = {
     const d = SR.state.doc;
     document.getElementById('docTitle').textContent = `${d.title} · ${spineLen} 章`;
     SR.setMode('reader');
+    this._somaticBreaker();   // 生理熔断：40 分钟强制休息
     this.readalong.on = false; this.readalong.goal = null; this.readalong.bannerShownFor = null;
     this.hideBanner();
     const raBtn = document.getElementById('btnReadalong');

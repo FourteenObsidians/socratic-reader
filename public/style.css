@@ -21,17 +21,17 @@
   --font-display: 'Noto Serif Variable', 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
   --font-code: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
-  --bg: #141413;            /* 主区画布 */
-  --panel: #191817;         /* 外壳：顶栏/侧栏/面板 */
-  --panel2: #232120;        /* 次级面 */
-  --panel3: #2b2927;
-  --surface: #1e1d1b;       /* 卡片/浮层（比外壳略亮，浮起感） */
+  --bg: #0f1012;            /* 主区画布（冷黑） */
+  --panel: #16171a;         /* 外壳：顶栏/侧栏/面板（冷灰） */
+  --panel2: #1e2024;        /* 次级面 */
+  --panel3: #27292e;
+  --surface: #1a1c1f;       /* 卡片/浮层 */
   --hover-bg: rgba(250,249,245,.06);   /* 行/按钮 hover 底色 */
   --seg-bg: rgba(250,249,245,.05);     /* 分段控件槽底 */
-  --border: #2e2c29;        /* 发丝线 */
-  --hairline: rgba(250,249,245,.08);
+  --border: #2a2d32;        /* 发丝线（冷） */
+  --hairline: rgba(240,242,246,.07);
   --text: #faf9f5;          /* 象牙文本 */
-  --muted: #b0aea5;
+  --muted: #9aa0a8;         /* 冷灰次要文字 */
   --accent: #d97757;        /* Claude 陶土橘 */
   --accent-dim: #b8603f;
   --accent-rgb: 217,119,87;
@@ -44,10 +44,10 @@
   --primary-fill: #faf9f5;  /* 反色主按钮：暗底配象牙钮 */
   --primary-ink: #141413;
   --primary-hover: #e8e6dc;
-  --pdf-desk: #100f0e;
+  --pdf-desk: #0b0c0e;
   --page-shadow: 0 2px 12px rgba(0,0,0,.55);
-  --user-bubble: linear-gradient(180deg,#282725,#232120);
-  --user-bubble-border: #3a3833;
+  --user-bubble: linear-gradient(180deg,#232529,#1c1e22);
+  --user-bubble-border: #33363b;
   color-scheme: dark;
   font-size: 14px;
 }
@@ -955,3 +955,7 @@ button.primary:hover, button.ghost:hover { transform: translateY(-1px); }
 /* 探索页两个按钮并排 */
 .explore-card > button#btnExploreStart { margin-right: 8px; }
 #btnFindTopic { margin-top: 4px; }
+
+/* 生理熔断：与里程碑同款全屏，但更克制 */
+.milestone.somatic .milestone-inner { background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px; padding: 36px 44px; box-shadow: var(--shadow-pop); }
+.milestone.somatic .milestone-title { font-size: 24px; }
