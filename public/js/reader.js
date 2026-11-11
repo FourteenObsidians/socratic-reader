@@ -1922,7 +1922,7 @@ SR.reader = {
           const body = this._epubDocText(doc);
           if (body) text += `\n[p.${p}]\n${body}\n\n`;
         } catch { /* 跳过坏章 */ }
-        if (text.length > 60000) { text = text.slice(0, 60000) + '\n…(已截断)'; break; }
+        if (text.length > 400000) { text = text.slice(0, 400000) + '\n…(已截断)'; break; }   // 提取层只做安全兜底；真正的容量限制交给 SR.matBlock（按页截断）
       }
       const highlights = d.ann
         .filter((a) => a.page >= part.from && a.page <= part.to)
@@ -1951,7 +1951,7 @@ SR.reader = {
           }
         } catch { /* 老版本 pdf.js 无 objs，退化为不检测 */ }
       } catch { /* 跳过 */ }
-      if (text.length > 60000) { text = text.slice(0, 60000) + '\n…(已截断)'; break; }
+      if (text.length > 400000) { text = text.slice(0, 400000) + '\n…(已截断)'; break; }   // 同上：提取层兜底
     }
     /* 图表截屏（最多 4 页，多了 token 爆炸）：配置了视觉模型才干这活 */
     const wantVision = !!(SR.state.config && SR.state.config.llm && SR.state.config.llm.visionModel);
