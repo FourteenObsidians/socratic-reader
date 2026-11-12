@@ -387,6 +387,21 @@ SR.reader = {
     return { norm: out.join(''), map };
   },
 
+  /* 取某一页附近（±span）的原文，供追问时的上下文（避免答"看不到正文"） */
+  async nearbyText(page, span) {
+    const d = this.doc;
+    if (!d || d.kind !== 'pdf' || !page) return '';
+    const sp = Number(span) || 1;
+    const from = Math.max(1, page - sp);
+    const to = Math.min(d.pages, page + sp);
+    let out = '';
+    for (let p = from; p <= to; p++) {
+      const t = await this._pageText(p);
+      if (t) out += `[p.${p}]\n${t}\n\n`;
+    }
+    return out.trim().slice(0, 12000);
+  },
+
   /* 在全文找一段文字的逐字原文；返回 { page, quote } 或 null */
   async locateText(text) {
     const d = this.doc;
@@ -485,6 +500,7 @@ SR.reader = {
   /* 带读聚焦：AI 标记 @pN[-M]|开头短语[→结尾短语] → 跨页定位整块并高亮；失败降级整页柔光。
      focusMode（设置里选）：off=只滚动不高亮 | flash=高亮片刻后淡出 | keep=常亮到下一块 */
   focusPages(from, to, quote, endQuote) {
+    this.lastAnchorPage = from;   // 供追问时取"当前页原文"
     const d = this.doc;
     if (!d || !this.scroll) return;
     if (d.kind === 'epub') return this._epubFocus(from, to, quote, endQuote);

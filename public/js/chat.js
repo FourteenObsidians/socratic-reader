@@ -421,7 +421,7 @@ ${r.content}`
     }
   },
 
-  openTermCard(term, extraCtx) {
+  async openTermCard(term, extraCtx) {
     const t = String(term || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     if (!t) return;
     this._termStack = this._termStack || [];
@@ -438,6 +438,12 @@ ${r.content}`
       : '';
     /* 术语链：A → B → C，让解释器知道这个词是从哪条追问链上冒出来的 */
     const chain = this._termStack.map((c) => c.term);
+    /* 原文上下文：追问"出处/来源/在哪说的"时必须能看到正文，否则只能瞎猜 */
+    let nearText = '';
+    try {
+      const pageNow = (extraCtx && extraCtx.page) || (SR.reader && (SR.reader.lastAnchorPage || (SR.reader.currentPage && SR.reader.currentPage())));
+      if (pageNow && SR.reader && SR.reader.nearbyText) nearText = await SR.reader.nearbyText(pageNow, 1);
+    } catch { /* ignore */ }
     const T = {
       term: t, depth, messages: [],
       system: [
@@ -450,6 +456,7 @@ ${r.content}`
         ctxBits.length ? '\n【阅读语境】' + ctxBits.join(' · ') : '',
         chain.length ? `\n【术语链】${chain.join(' → ')} → ${t}（当前）：这个词是用户在查「${chain[chain.length - 1]}」时遇到的。解释 ${t} 时可以假定用户已了解链条上游的概念（不必重讲），但要点明它与上游词的关系（上位/并列/组件/对比）。` : '',
         recent ? '\n【最近讨论摘要（仅供理解语境）】\n' + recent : '',
+        nearText ? '\n【原文（该名词所在页附近，回答“出处/来源/具体说了什么”必须以它为准，看不到的就明说原文未给出，不要编造）】\n' + nearText : '',
       ].filter(Boolean).join('\n'),
     };
     const thread = SR.el('div', { class: 'tc-thread' });
@@ -715,12 +722,12 @@ ${r.content}`
       if (c.length > 6000) s._matFull = c;   // 存档原文（只存一次；短材料不值得压）
     }
     const asstCount = s.messages.filter((m) => m.role === 'assistant' && !m.injected).length;
-    if (matIdx >= 0 && s._matFull && asstCount >= 4 && !s._matFolded) {
+    if (matIdx >= 0 && s._matFull && asstCount >= 8 && !s._matFolded) {
       const pages = [];
       const re = /\[p\.(\d+)\]\n?([\s\S]*?)(?=\n\[p\.|$)/g;
       let m;
-      while ((m = re.exec(s._matFull))) pages.push(`[p.${m[1]}] ${m[2].trim().slice(0, 260)}`);
-      s.messages[matIdx] = { role: 'user', content: '【材料·骨架】原文已压缩（每页前 260 字）。需要某页原文锚定时用 ?pages[N] 或 ?pages[N-M] 取。\n\n' + pages.join('\n') };
+      while ((m = re.exec(s._matFull))) pages.push(`[p.${m[1]}] ${m[2].trim().slice(0, 600)}`);
+      s.messages[matIdx] = { role: 'user', content: '【材料·骨架】原文已压缩（每页前 600 字；完整原文已存档）。需要某页原文时用 ?pages[N] 或 ?pages[N-M] 取回。\n\n' + pages.join('\n') };
       s._matFolded = true;
     }
     /* ② 历史滚动摘要：只压"请求副本"，不动 s.messages（界面完整保留）。
@@ -744,8 +751,19 @@ ${r.content}`
     if (pz) sysBase += '\n' + pz;
     /* 公式排版指令：与语言指令同级，每条消息强制注入（旧会话刷新后立即生效，不靠开课时烘焙） */
     const texDirective = '【公式排版】数学内容一律规范 LaTeX，前端用 KaTeX 渲染：行内 $...$、独立公式 $$...$$。包括：变量与参数（$T = 600$、$\\eta$）、区间/坐标（$[9000,\\ 15000]$）、集合（$\\{0, 300, 700\\}$）、运算与比较（$d(x,y) \\le T$、$\\sum_i \\mathrm{AF}_i$）、上下标（$w_{t+1}$）。【严禁】Unicode 拼凑（x²、∑、≤、≥、×、→ 单独出现）——比较符写 $\\le$、箭头写 $\\to$。算法题的规则、数据、求解里同样遵守（表格单元格内也用 LaTeX）。散文里的普通名词不带 $。';
+    /* 材料已折叠成骨架后，追问时自动补「当前页原文」，避免模型答"看不到正文" */
+    let anchorSystem = '';
+    if (s._matFolded && SR.reader && SR.reader.nearbyText && SR.reader.doc) {
+      try {
+        const pageNow = SR.reader.lastAnchorPage || (SR.reader.currentPage && SR.reader.currentPage()) || 1;
+        const nearT = await SR.reader.nearbyText(pageNow, 1);
+        if (nearT) {
+          anchorSystem = '【当前页原文（材料已压缩为骨架；这是用户正在看的 p.' + pageNow + ' 附近原文，回答出处/数字/原话类追问以此为准；需要其他页时让用户用 ?pages[N-M] 取回）】\n' + nearT;
+        }
+      } catch { /* ignore */ }
+    }
     const msgs = [
-      { role: 'system', content: [sysBase, this.readerProfile(), extraSystem, memorySystem, langDirective, texDirective].filter(Boolean).join('\n\n') },
+      { role: 'system', content: [sysBase, this.readerProfile(), extraSystem, anchorSystem, memorySystem, langDirective, texDirective].filter(Boolean).join('\n\n') },
       ...histMsgs,
     ];
     try {
