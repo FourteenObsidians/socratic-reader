@@ -268,7 +268,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v48.7-提取上限';
+  SR.VERSION = 'v48.8-原文定位';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#d97757;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
@@ -568,6 +568,17 @@ SR.zotero = {
       SR.chat._showTermBtn(rect, txt);
     }, 10);
   });
+  /* 🔦 定位原文：优先用当前选中文字，否则用输入框里打的字 */
+  document.getElementById('btnLocate').addEventListener('click', () => {
+    let sel = '';
+    try { const s2 = window.getSelection(); sel = (s2 && s2.toString()) || ''; } catch { /* ignore */ }
+    const typed = (document.getElementById('chatInput') || {}).value || '';
+    const text = (sel.trim().length >= 4 ? sel : typed).trim();
+    if (!text) { SR.toast('先在对话里选中一段文字，或在输入框里打几个字'); return; }
+    if (!SR.state.doc) { SR.toast('先打开一篇 PDF'); return; }
+    SR.reader.locateAndFocus(text);
+  });
+
   /* 闭卷复盘的偷看开关：掀开↔收起，纯视图切换（遮罩由会话开合控制） */
   document.getElementById('btnPeek').addEventListener('click', () => {
     const masked = document.body.classList.toggle('pdf-masked');

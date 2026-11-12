@@ -172,6 +172,7 @@ document.documentElement.dataset.theme = localStorage.getItem('sr_theme') || 'da
     <div id="chatInputBar">
       <textarea id="chatInput" rows="2" placeholder="回答引导者的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
       <div class="input-actions">
+        <button id="btnLocate" class="ghost small" title="定位原文：把输入框里的文字（或当前选中文字）在 PDF 中找出并高亮">🔦 定位</button>
         <button id="btnPuzzle" class="ghost small" title="算法题偏好：点击切换 优先→自动→关闭（立即生效于下一条回复）">🧩 出题</button>
         <button id="btnStop" class="ghost small hidden">⏹ 停止</button>
         <button id="btnSend" class="primary small">发送</button>

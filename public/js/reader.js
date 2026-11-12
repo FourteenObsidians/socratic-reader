@@ -358,6 +358,130 @@ SR.reader = {
     this.setPageIndicator(n);
   },
 
+  /* ===== 文本定位：把"对话里选中的一段话"在 PDF 原文中找到并高亮 ===== */
+  async _pageText(p) {
+    const d = this.doc;
+    this._txtCache = this._txtCache || new Map();
+    if (this._txtCache.has(p)) return this._txtCache.get(p);
+    let t = '';
+    try {
+      const pg = await d.pdf.getPage(p);
+      const tc = await pg.getTextContent();
+      t = tc.items.map((i) => i.str).join(' ');
+    } catch { /* ignore */ }
+    this._txtCache.set(p, t);
+    return t;
+  },
+
+  /* 归一化：去掉空白与标点，并保留"归一化字符 → 原文下标"的映射，便于回取逐字原文 */
+  _normWithMap(src) {
+    const out = [];
+    const map = [];
+    const isPunct = (c) => /[\s\u00a0，。、；：""''（）()\[\]【】《》,.;:'"!?！？·…—–\-]/.test(c);
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i];
+      if (isPunct(c)) continue;
+      out.push(c);
+      map.push(i);
+    }
+    return { norm: out.join(''), map };
+  },
+
+  /* 在全文找一段文字的逐字原文；返回 { page, quote } 或 null */
+  async locateText(text) {
+    const d = this.doc;
+    const raw = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!d || d.kind !== 'pdf' || raw.length < 4) return null;
+    const pages = [];
+    for (let p = 1; p <= Math.min(d.pages, 400); p++) pages.push(p);
+    const nm = this._normWithMap(raw);
+    const target = nm.norm;
+    if (target.length < 4) return null;
+
+    const tryPage = async (p, needle) => {
+      const src = await this._pageText(p);
+      if (!src) return null;
+      const pm = this._normWithMap(src);
+      const idx = pm.norm.indexOf(needle);
+      if (idx < 0) return null;
+      const s0 = pm.map[idx];
+      const s1 = pm.map[Math.min(pm.map.length - 1, idx + needle.length - 1)];
+      let quote = src.slice(s0, s1 + 1).trim();
+      if (quote.length > 26) quote = quote.slice(0, 26);   // 高亮锚点不需要太长
+      return quote || null;
+    };
+
+    /* ① 整段（归一化后）精确匹配 */
+    for (const p of pages) {
+      const q = await tryPage(p, target);
+      if (q) return { page: p, quote: q };
+    }
+    /* ② 退化为最长片段（按标点切分，取 ≥8 字的前几段） */
+    const frags = raw.split(/[\s，。、；：""''（）()\[\]【】《》,.;:'"!?！？·…—–\-]+/)
+      .map((x) => this._normWithMap(x).norm).filter((x) => x.length >= 8).sort((a, b) => b.length - a.length);
+    for (const f of frags.slice(0, 4)) {
+      for (const p of pages) {
+        const q = await tryPage(p, f);
+        if (q) return { page: p, quote: q };
+      }
+    }
+    /* ③ 首 20 字兜底 */
+    const head = target.slice(0, Math.min(20, target.length));
+    if (head.length >= 8) {
+      for (const p of pages) {
+        const q = await tryPage(p, head);
+        if (q) return { page: p, quote: q };
+      }
+    }
+    return null;
+  },
+
+  /* 选中一段话 → 定位并高亮；本地找不到时让模型反查原文逐字片段，再定位一次 */
+  async locateAndFocus(text) {
+    const d = this.doc;
+    const raw = String(text || '').trim();
+    if (!d) { SR.toast('先打开一篇 PDF'); return false; }
+    if (raw.length < 4) { SR.toast('选中内容太短'); return false; }
+    const pg = SR.progress('locate', '🔦 在原文中定位…');
+    try {
+      let hit = await this.locateText(raw);
+      if (!hit) {
+        pg.set(50, '本地没匹配到，让模型反查原文…');
+        const vq = await this._askVerbatimQuote(raw);
+        if (vq) hit = await this.locateText(vq);
+      }
+      if (!hit) { pg.fail('原文里没找到对应段落'); SR.toast('原文里没找到对应段落（可能是转述）——试着选中原文里的一个词组', 'info', 4200); return false; }
+      pg.done(`已定位 p.${hit.page}`, 1200);
+      this.focusPages(hit.page, hit.page, hit.quote, null);
+      SR.toast(`🔦 已定位到 p.${hit.page}：${hit.quote.slice(0, 18)}…`, 'success', 2600);
+      return true;
+    } catch (e) { pg.fail(e.message || String(e)); return false; }
+  },
+
+  /* 让模型给出与转述对应的原文逐字片段（一次轻量调用，不进主对话） */
+  async _askVerbatimQuote(text) {
+    const d = this.doc;
+    if (!d) return '';
+    /* 取当前部分/前 6 页原文作为检索范围，避免全篇灌入 */
+    let scope = '';
+    const from = (this.readalong.goal && this.readalong.goal.from) || 1;
+    for (let p = from; p <= Math.min(d.pages, from + 6) && scope.length < 30000; p++) {
+      scope += `[p.${p}]\n${await this._pageText(p)}\n`;
+    }
+    try {
+      const r = await SR.apiPost('/api/llm/chat', {
+        stream: false, temperature: 0.1,
+        messages: [
+          { role: 'system', content: '你是原文定位助手。用户给你一段转述或疑问，请在给出的原文中找出最对应的一句话，**逐字复制 10–26 个字符**（必须与原文完全一致，含原有中英文符号），只输出这段文字本身，不要加引号、不要解释。找不到就输出 NONE。' },
+          { role: 'user', content: `【原文】\n${scope}\n\n【要定位的话】\n${text}` },
+        ],
+      });
+      const q = String((r && r.content) || '').replace(/^["“”']|["“”']$/g, '').trim();
+      if (!q || /^NONE$/i.test(q)) return '';
+      return q.slice(0, 60);
+    } catch { return ''; }
+  },
+
   /* 带读聚焦：AI 标记 @pN[-M]|开头短语[→结尾短语] → 跨页定位整块并高亮；失败降级整页柔光。
      focusMode（设置里选）：off=只滚动不高亮 | flash=高亮片刻后淡出 | keep=常亮到下一块 */
   focusPages(from, to, quote, endQuote) {

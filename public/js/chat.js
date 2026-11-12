@@ -476,6 +476,10 @@ ${r.content}`
       thread,
       SR.el('div', { class: 'tc-bar' }, input,
         SR.el('button', { class: 'primary small', onclick: send }, '追问'),
+        SR.el('button', { class: 'ghost small', title: '在 PDF 原文中定位：优先用卡里选中的文字，否则定位这个术语', onclick: () => {
+          const selTxt = (() => { try { const s2 = window.getSelection(); return s2 && s2.toString().trim(); } catch { return ''; } })();
+          if (SR.reader && SR.reader.locateAndFocus) SR.reader.locateAndFocus(selTxt || t);
+        } }, '🔦 定位'),
         SR.el('button', { class: 'ghost small tc-archive', title: '把这张卡沉淀为 Obsidian 概念条目（自动入学习 Wiki 关系网）', onclick: () => this.archiveTermCard(T) }, '📁 归档')),
       SR.el('div', { class: 'tc-foot' },
         parentTerm ? `解释里的新词可选中再开卡 · ✕ 回到「${parentTerm}」` : '解释里的新词可选中再开一张卡 · 带读未受影响'));
@@ -622,23 +626,39 @@ ${r.content}`
 
   /* 选中文字 → 浮出 📖 小按钮（带读气泡 / PDF / 速查卡内皆可；parentCard 存在则为递归层） */
   _showTermBtn(rect, txt, parentCard) {
-    const old = document.querySelector('.term-pop'); if (old) old.remove();
+    document.querySelectorAll('.term-pop').forEach((e) => e.remove());
+    if (this._selPopTimer) clearTimeout(this._selPopTimer);
     const t = String(txt || '').trim();
-    if (!rect || t.length < 2 || t.length > 80) return;
-    const btn = SR.el('button', { class: 'term-pop', title: parentCard ? '在这个词上再开一张速查卡（术语链向下）' : '名词速查卡（不中断带读）' }, '📖 速查');
-    btn.addEventListener('mousedown', (ev) => ev.preventDefault());   // 保住选区
-    btn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      this.openTermCard(t, parentCard ? { parent: parentCard } : null);
-      btn.remove();
-    });
-    document.body.appendChild(btn);
-    btn.style.left = Math.max(8, Math.min(window.innerWidth - 110, rect.left + rect.width / 2 - 45)) + 'px';
-    /* 选区贴近卡片/窗口顶部时，按钮翻到选区下方，避免被卡片头部挡住 */
-    const top = rect.top - 34;
-    btn.style.top = (top < 70 ? Math.min(window.innerHeight - 40, rect.bottom + 8) : Math.max(8, top)) + 'px';
-    setTimeout(() => document.addEventListener('mousedown', function once(ev2) {
-      if (!(ev2.target && ev2.target.closest && ev2.target.closest('.term-pop'))) { btn.remove(); document.removeEventListener('mousedown', once); }
+    if (!rect || t.length < 2) return;
+    const box = SR.el('div', { class: 'sel-pop' });
+    /* 📖 名词速查（短词，≤80 字；嵌套卡片时也走速查） */
+    if (t.length <= 80) {
+      box.appendChild(SR.el('button', {
+        class: 'term-pop', title: parentCard ? '在这个词上再开一张速查卡（术语链向下）' : '名词速查卡（不中断带读）',
+        onmousedown: (ev) => ev.preventDefault(),
+        onclick: (ev) => {
+          ev.stopPropagation();
+          this.openTermCard(t, parentCard ? { parent: parentCard } : null);
+          box.remove();
+        },
+      }, '📖 速查'));
+    }
+    /* 🔦 在 PDF 原文里定位并高亮这段 */
+    box.appendChild(SR.el('button', {
+      class: 'term-pop', title: '在 PDF 原文中定位这段内容并高亮（转述也能反查）',
+      onmousedown: (ev) => ev.preventDefault(),
+      onclick: (ev) => {
+        ev.stopPropagation();
+        box.remove();
+        if (SR.reader && SR.reader.locateAndFocus) SR.reader.locateAndFocus(t);
+      },
+    }, '🔦 定位原文'));
+    document.body.appendChild(box);
+    box.style.left = Math.max(8, Math.min(window.innerWidth - 190, rect.left + rect.width / 2 - 90)) + 'px';
+    const top = rect.top - 36;
+    box.style.top = (top < 70 ? Math.min(window.innerHeight - 44, rect.bottom + 8) : Math.max(8, top)) + 'px';
+    this._selPopTimer = setTimeout(() => document.addEventListener('mousedown', function once(ev2) {
+      if (!(ev2.target && ev2.target.closest && ev2.target.closest('.sel-pop'))) { box.remove(); document.removeEventListener('mousedown', once); }
     }), 0);
   },
 
