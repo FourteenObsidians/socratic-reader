@@ -945,7 +945,8 @@ button.primary:hover, button.ghost:hover { transform: translateY(-1px); }
 
 /* ============ 算法工具：脱水 / 对赌 / 玩具代码 ============ */
 .codeCard { width: 480px !important; }
-.codeCard .tc-thread { max-height: 58vh; overflow-y: auto; }
+.codeCard .tc-thread { max-height: none; flex: 1; min-height: 0; overflow-y: auto; }
+.codeCard { max-height: 78vh; }
 .codeCard pre {
   background: var(--panel2); border: 1px solid var(--hairline); border-radius: 9px;
   padding: 11px 12px; overflow-x: auto; font-size: 11.5px; line-height: 1.62; margin: 8px 0;
@@ -981,10 +982,11 @@ button.primary:hover, button.ghost:hover { transform: translateY(-1px); }
 .rs-sw::after { left: 6px; border-left: 2px solid var(--muted); border-radius: 0 0 0 2px; }
 .termCard.resizing, .tr-card.resizing, .noteCard.resizing { user-select: none; }
 /* 缩放后：内容自适应，长公式优先换行/横向兜底滚动 */
-.termCard .tc-thread { max-height: none; flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; }
-.termCard .tc-answer { min-width: 0; overflow-x: auto; }
+.termCard { max-height: 82vh; }   /* 卡片随内容长高，到视口 82% 才整体滚动 */
+.termCard .tc-thread { max-height: none; flex: 1; min-height: 0; overflow-y: auto; }   /* 只保留整体竖向滚动 */
+.termCard .tc-answer { min-width: 0; }   /* 关键：不要 overflow-x，否则每块变成独立滚动容器 */
 .termCard .tc-answer .katex-display { overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
-.tr-card .tr-dst { min-width: 0; overflow-x: auto; }
+.tr-card .tr-dst { min-width: 0; }
 .tr-card .katex-display { overflow-x: auto; }
 .noteCard { font-size: 13px; }
 

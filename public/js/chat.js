@@ -531,9 +531,14 @@ ${r.content}`
     T.threadEl.scrollTop = T.threadEl.scrollHeight;
     let acc = '';
     try {
+      /* 只有用户本来就在底部时才自动跟随；往上翻阅读时不打断 */
+      const nearBottom = () => {
+        const th = T.threadEl;
+        return th.scrollHeight - th.scrollTop - th.clientHeight < 60;
+      };
       acc = await SR.chatStream(
         [{ role: 'system', content: T.system }, ...T.messages],
-        { onDelta: (_d, all) => { ans.textContent = all; T.threadEl.scrollTop = T.threadEl.scrollHeight; } },
+        { onDelta: (_d, all) => { const follow = nearBottom(); ans.textContent = all; if (follow) T.threadEl.scrollTop = T.threadEl.scrollHeight; } },
       );
       ans.innerHTML = SR.md(acc);
       T.messages.push({ role: 'assistant', content: acc });
@@ -541,7 +546,6 @@ ${r.content}`
       ans.innerHTML = `<b style="color:var(--red)">出错了：</b>${SR.esc(e.message)}`;
     } finally {
       T.busy = false;
-      T.threadEl.scrollTop = T.threadEl.scrollHeight;
     }
   },
 
