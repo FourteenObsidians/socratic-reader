@@ -268,7 +268,7 @@ SR.zotero = {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  SR.VERSION = 'v48.10-整卡滚动';
+  SR.VERSION = 'v48.11-一次一题';
   console.log('%c[SR] 苏格拉底阅读器 ' + SR.VERSION, 'color:#d97757;font-weight:bold');
   /* PDF.js：本地 vendor 优先，CDN 兜底 */
   try {
