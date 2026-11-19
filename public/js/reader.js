@@ -1654,6 +1654,10 @@ SR.reader = {
       /* 玩具代码：把公式/段落变成 30 行内可跑的 Demo（浮层卡片，不污染主对话） */
       SR.chat.openCodeCard(s.text, { page: firstPage });
       return;
+    } else if (act === 'plain') {
+      /* 说人话：第一性原理 + 大白话科普式讲解这段（浮层卡，不污染主对话） */
+      SR.chat.explainPlain(s.text, { page: firstPage });
+      return;
     }
     window.getSelection().removeAllRanges();
   },

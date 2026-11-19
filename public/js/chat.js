@@ -421,6 +421,53 @@ ${r.content}`
     }
   },
 
+  /* ---------- 说人话：第一性原理 + 少黑话 + 点破本质，科普式讲解选中段落 ---------- */
+  async explainPlain(text, extraCtx) {
+    const src = String(text || '').trim().slice(0, 6000);
+    if (!src) return;
+    if (this._plainEl) { try { this._plainEl.remove(); } catch { /* ignore */ } this._plainEl = null; }
+    const s = SR.state.session;
+    const ctx = (s && s.context && s.context.title) ? `《${s.context.title}》${s.context.partTitle ? ' · ' + s.context.partTitle : ''}` : '';
+    const ans = SR.el('div', { class: 'tc-answer' }, '…');
+    const card = SR.el('div', { class: 'termCard plainCard' },
+      SR.el('div', { class: 'tc-head' },
+        SR.el('span', { class: 'tc-title' }, '💡 说人话'),
+        SR.el('span', { class: 'tc-term' }, extraCtx && extraCtx.page ? 'p.' + extraCtx.page : ''),
+        SR.el('button', { class: 'ghost small', title: '关闭（Esc）', onclick: () => { card.remove(); this._plainEl = null; } }, '✕')),
+      SR.el('div', { class: 'tc-thread' },
+        SR.el('div', { class: 'tr-src', style: 'max-height:70px' }, src.slice(0, 260) + (src.length > 260 ? '…' : '')),
+        ans));
+    this._plainEl = card;
+    document.body.appendChild(card);
+    SR.draggable(card, card.querySelector('.tc-head'));
+    SR.resizable(card, { key: 'plainCard', minW: 320, minH: 180 });
+    card.style.right = '24px'; card.style.top = '76px'; card.style.width = '440px';
+    const sys = [
+      '你是「说人话」讲解器。用户选中了论文里一段看不懂的话，你要用大白话讲清楚「这段到底在说什么」。',
+      '',
+      '## 读者画像（必须据此讲，否则讲得再对也没用）',
+      '算法竞赛背景，图论 / 动态规划 / 复杂度直觉极强；极度厌恶黑话、注水、通路叙事和「众所周知」式空话。他不需要被降低智商的科普，而是要「把术语翻译成他能立刻上手想的东西」。',
+      '',
+      '## 要求',
+      '1. **第一性原理**：从最朴素、无需前置知识的直觉出发，一步一步推到这段的概念 / 方法，而不是套术语定义或复述原句。',
+      '2. **少黑话（硬性）**：每个专业术语第一次出现时用一句大白话翻译（可括英文原文）；能不用术语就不用；禁止堆叠「在……框架下」「通过……机制」这类空转。',
+      '3. **点破本质**：如果这段背后藏着一个可抽象的计算问题（图 / 序列 / 集合 / 优化 / 概率），用一句话点破——「本质是 XX」（如：一个区间聚类 / 一个动态规划 / 一个哈希去重 / 一个组合计数），让他立刻有抓手。',
+      '4. **科普感但密度高**：像一个聪明的同行顺手给你讲，可举一个最小例子或类比；篇幅 200–400 字，直接讲，不客套、不结尾提问、不列提纲。',
+      '5. 数学一律规范 LaTeX（$...$ / $$...$$，不用 Unicode 拼凑）。',
+    ].join('\n');
+    try {
+      const acc = await SR.chatStream([{ role: 'system', content: sys }, { role: 'user', content: (ctx ? ctx + '\n\n' : '') + src }], {
+        onDelta: (_d, all) => { ans.innerHTML = SR.md(all); },
+      });
+      ans.innerHTML = SR.md(acc);
+      card.appendChild(SR.el('div', { class: 'tc-bar' },
+        SR.el('button', { class: 'ghost small', onclick: () => SR.copyText(acc) }, '📋 复制'),
+        SR.el('button', { class: 'ghost small', onclick: () => { card.remove(); this._plainEl = null; } }, '关闭')));
+    } catch (e) {
+      ans.innerHTML = `<b style="color:var(--red)">生成失败：</b>${SR.esc(e.message)}`;
+    }
+  },
+
   async openTermCard(term, extraCtx) {
     const t = String(term || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     if (!t) return;
@@ -664,8 +711,18 @@ ${r.content}`
         if (SR.reader && SR.reader.locateAndFocus) SR.reader.locateAndFocus(t);
       },
     }, '🔦 定位原文'));
+    /* 🗣 说人话：第一性原理 + 大白话科普式讲解这段 */
+    box.appendChild(SR.el('button', {
+      class: 'term-pop', title: '说人话：用第一性原理 + 大白话讲这段在说什么（少黑话，点破本质）',
+      onmousedown: (ev) => ev.preventDefault(),
+      onclick: (ev) => {
+        ev.stopPropagation();
+        box.remove();
+        this.explainPlain(t, null);
+      },
+    }, '🗣 说人话'));
     document.body.appendChild(box);
-    box.style.left = Math.max(8, Math.min(window.innerWidth - 190, rect.left + rect.width / 2 - 90)) + 'px';
+    box.style.left = Math.max(8, Math.min(window.innerWidth - 300, rect.left + rect.width / 2 - 140)) + 'px';
     const top = rect.top - 36;
     box.style.top = (top < 70 ? Math.min(window.innerHeight - 44, rect.bottom + 8) : Math.max(8, top)) + 'px';
     this._selPopTimer = setTimeout(() => document.addEventListener('mousedown', function once(ev2) {
